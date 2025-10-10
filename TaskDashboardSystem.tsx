@@ -1745,7 +1745,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                                     {isActionable && (<span style={{ cursor: requiresAttachment ? 'not-allowed' : 'default' }} title={requiresAttachment ? 'Requires document upload; submit individually.' : ''}><input type="checkbox" onChange={() => handleToggleSelectOne(task.id)} checked={selectedTaskIds.has(task.id)} disabled={isDisabledForSelection || isQueued} aria-label={`Select task ${task.taskId}`} /></span>)}
                                                                 </td>
                                                                 <td>{task.taskId}</td><td>{task.systemType}</td><td>{task.task}</td><td>{task.planned.split(' ')[0]}</td><td>{task.userName || task.name}</td>
-                                                                <td>{isActionable && (<button className={`btn-mark-done ${isQueued ? 'btn-queued' : ''}`} onClick={() => handleMarkDoneClick(task)} disabled={isSubmitting || isQueued}>{isQueued ? 'Marked' : 'Mark Done'}</button>)}</td>
+                                                                <td>{isActionable && (<button className={`btn-mark-done ${isQueued ? 'btn-queued' : ''}`} onClick={() => handleMarkDoneClick(task)} disabled={isSubmitting || isQueued}>{isQueued ? 'Submitting...' : 'Mark Done'}</button>)}</td>
                                                             </tr>
                                                         );
                                                     }) : (<tr><td colSpan={7} style={{textAlign: 'center', padding: '32px'}}>No tasks found.</td></tr>)}
