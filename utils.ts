@@ -246,8 +246,14 @@ export const robustCsvParser = (csvText: string): string[][] => {
 };
 
 export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, holidays: string[]): number => {
-    // If actual is before or on planned, there's no delay in working days.
-    if (actualDate.getTime() <= plannedDate.getTime()) {
+    // Create copies and normalize to midnight to compare dates only
+    const pDate = new Date(plannedDate);
+    pDate.setHours(0, 0, 0, 0);
+    const aDate = new Date(actualDate);
+    aDate.setHours(0, 0, 0, 0);
+
+    // If actual is on or before planned, there's no delay.
+    if (aDate.getTime() <= pDate.getTime()) {
         return 0;
     }
 
@@ -259,12 +265,10 @@ export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, h
     );
 
     let workingDays = 0;
-    const currentDate = new Date(plannedDate);
-    currentDate.setHours(0, 0, 0, 0);
-    actualDate.setHours(0, 0, 0, 0);
+    const currentDate = new Date(pDate);
 
-    // Loop from the day after plannedDate up to and including actualDate
-    while (currentDate.getTime() < actualDate.getTime()) {
+    // Loop from the day *after* plannedDate up to and including actualDate
+    while (currentDate.getTime() < aDate.getTime()) {
         currentDate.setDate(currentDate.getDate() + 1);
         
         const dayOfWeek = currentDate.getDay(); // Sunday: 0, Saturday: 6
@@ -274,6 +278,12 @@ export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, h
         if (!isWeekend && !isHoliday) {
             workingDays++;
         }
+    }
+
+    // If the task is late (aDate > pDate) but the calculated delay is 0 
+    // (meaning it was completed over a weekend/holiday), count it as a 1-day delay.
+    if (workingDays === 0) {
+        return 1;
     }
 
     return workingDays;
