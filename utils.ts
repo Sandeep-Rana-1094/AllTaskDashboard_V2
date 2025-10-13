@@ -1,7 +1,8 @@
 
 
+
 import React, { useState } from 'react';
-import { Task } from './types';
+import { Task, Holiday } from './types';
 
 // --- HOOK FOR LOCALSTORAGE (Exported) ---
 export function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
@@ -245,7 +246,7 @@ export const robustCsvParser = (csvText: string): string[][] => {
     return rows.slice(1).map(row => row.map(field => field.trim().replace(/^"|"$/g, '')));
 };
 
-export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, holidays: string[]): number => {
+export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, holidays: Holiday[]): number => {
     // Create copies and normalize to midnight to compare dates only
     const pDate = new Date(plannedDate);
     pDate.setHours(0, 0, 0, 0);
@@ -259,7 +260,7 @@ export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, h
 
     const holidayDateStrings = new Set(
         holidays.map(h => {
-            const d = parseDate(h);
+            const d = parseDate(h.date);
             return d ? d.toDateString() : '';
         }).filter(Boolean)
     );
