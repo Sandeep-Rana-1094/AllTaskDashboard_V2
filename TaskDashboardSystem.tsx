@@ -141,7 +141,7 @@ interface TaskDashboardSystemProps {
 const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"/></svg>;
 const PendingIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/></svg>;
 const OverdueIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5m.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2"/></svg>;
-const TodayIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M4.684 11.523v-2.3h2.261v-.91h-2.261v-2.3H5.98v2.3h2.261v.91H5.98v2.3zM2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/></svg>;
+const TodayIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M4.684 11.523v-2.3h2.261v-.91h-2.261v-2.3H5.98v2.3h2.261v.91H5.98v2.3zM2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2-2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/></svg>;
 const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>;
 const ArrowIcon: React.FC<{ className?: string }> = ({ className }) => <svg className={className} xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/></svg>;
 const DashboardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0"/></svg>;
@@ -740,7 +740,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [people, userEmail, dashboardTasks]);
 
     // --- My Dashboard Calculations ---
-    const { workingDays, daysPresent, attendancePercentage } = useMemo(() => {
+    const myAttendanceBreakdown = useMemo(() => {
         const { start: periodStart, end: periodEnd } = getPreviousWeekRange();
 
         const userEmailLower = userEmail.toLowerCase();
@@ -763,48 +763,86 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             holidays.map(h => parseDate(h)?.toDateString()).filter(Boolean)
         );
 
-        let workingDaysCount = 0;
-        let presentCount = 0;
-        const loopDate = new Date(periodStart);
         const today = new Date(); today.setHours(0, 0, 0, 0);
-        
-        const attendanceMap = new Map<string, string>();
-        if(firstAttendanceDate) {
-            firstAttendanceDate.setHours(0, 0, 0, 0);
-            userAttendanceRecords.forEach(att => {
-                const d = parseDate(att.date);
-                if (d) {
-                    attendanceMap.set(d.toDateString(), att.status);
+
+        if (!firstAttendanceDate) {
+            let wdCount = 0;
+            const d = new Date(periodStart);
+            while (d <= periodEnd && d <= today) {
+                const dayOfWeek = d.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const isHoliday = holidayDates.has(d.toDateString());
+                if (!isWeekend && !isHoliday) {
+                    wdCount++;
                 }
-            });
+                d.setDate(d.getDate() + 1);
+            }
+            return {
+                workingDays: wdCount,
+                daysPresent: 0,
+                attendancePercentage: 0,
+                notMarked: wdCount,
+                otherStatusesBreakdown: [],
+            };
         }
+        
+        firstAttendanceDate.setHours(0, 0, 0, 0);
+
+        const attendanceMap = new Map<string, string>();
+        userAttendanceRecords.forEach(att => {
+            const d = parseDate(att.date);
+            if (d) {
+                attendanceMap.set(d.toDateString(), att.status);
+            }
+        });
+
+        let workingDaysCount = 0;
+        let notMarkedCount = 0;
+        const statusCounts = new Map<string, number>();
+
+        const loopDate = new Date(periodStart);
 
         while (loopDate <= periodEnd && loopDate <= today) {
-            // Only count working days after employee's start date
-            if (!firstAttendanceDate || loopDate >= firstAttendanceDate) {
+            if (loopDate >= firstAttendanceDate) {
                 const dayOfWeek = loopDate.getDay();
                 const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const isHoliday = holidayDates.has(loopDate.toDateString());
 
                 if (!isWeekend && !isHoliday) {
                     workingDaysCount++;
-                    if (firstAttendanceDate) { // only check for presence if we have records
-                        const status = attendanceMap.get(loopDate.toDateString());
-                        if (status && PRESENT_STATUSES.includes(status.toLowerCase())) {
-                            presentCount++;
-                        }
+                    const status = attendanceMap.get(loopDate.toDateString());
+
+                    if (status) {
+                        const currentCount = statusCounts.get(status) || 0;
+                        statusCounts.set(status, currentCount + 1);
+                    } else {
+                        notMarkedCount++;
                     }
                 }
             }
             loopDate.setDate(loopDate.getDate() + 1);
         }
         
-        const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
+        let presentCount = 0;
+        const otherStatusesBreakdown: [string, number][] = [];
 
+        for (const [status, count] of statusCounts.entries()) {
+            if (PRESENT_STATUSES.includes(status.toLowerCase())) {
+                presentCount += count;
+            } else {
+                otherStatusesBreakdown.push([status, count]);
+            }
+        }
+        otherStatusesBreakdown.sort((a, b) => a[0].localeCompare(b[0]));
+        
+        const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
+        
         return {
             workingDays: workingDaysCount,
             daysPresent: presentCount,
-            attendancePercentage: percentage
+            attendancePercentage: percentage,
+            notMarked: notMarkedCount,
+            otherStatusesBreakdown: otherStatusesBreakdown,
         };
     }, [dailyAttendanceData, holidays, userEmail, userName, PRESENT_STATUSES]);
 
@@ -1636,10 +1674,28 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                             <div className="dashboard-card attendance-card">
                                 <h3>My Weekly Attendance <span className="date-range">{prevWeekDateRange}</span></h3>
                                 <div className="attendance-progress">
-                                    <CircularProgress percentage={attendancePercentage} color="#22c55e" />
-                                    <div className="attendance-stats">
-                                        <div className="attendance-stat"><div className="stat-label">Working Days</div><div className="stat-value">{workingDays}</div></div>
-                                        <div className="attendance-stat"><div className="stat-label">Days Present</div><div className="stat-value">{daysPresent}</div></div>
+                                    <CircularProgress percentage={myAttendanceBreakdown.attendancePercentage} color="#22c55e" />
+                                     <div className="attendance-details-list">
+                                        <div className="detail-item">
+                                            <span>Working Days</span>
+                                            <span className="detail-value">{myAttendanceBreakdown.workingDays}</span>
+                                        </div>
+                                        <div className="detail-item">
+                                            <span>Present</span>
+                                            <span className="detail-value">{myAttendanceBreakdown.daysPresent}</span>
+                                        </div>
+                                        {myAttendanceBreakdown.otherStatusesBreakdown.map(([status, count]) => (
+                                            <div className="detail-item" key={status}>
+                                                <span>{status}</span>
+                                                <span className="detail-value">{count}</span>
+                                            </div>
+                                        ))}
+                                        {myAttendanceBreakdown.notMarked > 0 && (
+                                            <div className="detail-item">
+                                                <span>Not Marked</span>
+                                                <span className="detail-value">{myAttendanceBreakdown.notMarked}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
