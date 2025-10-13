@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory } from './types';
+import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
 import { parseDate, calculateWorkingDaysDelay } from './utils';
 
 // --- HELPER FUNCTIONS ---
@@ -132,7 +132,7 @@ interface TaskDashboardSystemProps {
     people: Person[];
     attendanceData: AttendanceData[];
     dailyAttendanceData: DailyAttendance[];
-    holidays: string[];
+    holidays: Holiday[];
     taskHistory: TaskHistory[];
 }
 
@@ -319,6 +319,7 @@ interface CalendarViewProps {
     setSelectedCalendarDate: React.Dispatch<React.SetStateAction<Date | null>>;
     userAttendanceByDate: Map<string, string>;
     isAdmin: boolean;
+    holidays: Holiday[];
 }
 
 const CalendarView: React.FC<CalendarViewProps> = ({
@@ -330,8 +331,20 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     setSelectedCalendarDate,
     userAttendanceByDate,
     isAdmin,
+    holidays,
 }) => {
     const today = new Date();
+
+    const holidaysMap = useMemo(() => {
+        const map = new Map<string, string>();
+        holidays.forEach(h => {
+            const d = parseDate(h.date);
+            if (d) {
+                map.set(d.toDateString(), h.name);
+            }
+        });
+        return map;
+    }, [holidays]);
 
     const handlePrev = () => {
         setCalendarDate(current => {
@@ -470,10 +483,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                     
                     const dayOfWeek = day.getDay(); // 0 = Sunday, 6 = Saturday
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const holidayName = holidaysMap.get(day.toDateString());
 
                     let content = null;
 
-                    if (attendanceStatus && attendanceStatus.toLowerCase() !== 'present') {
+                    if (holidayName) {
+                        content = (
+                            <div className="task-summary-container">
+                                <div className="task-summary-item task-summary-weekoff">
+                                    <span className="label">{holidayName}</span>
+                                </div>
+                            </div>
+                        );
+                    } else if (attendanceStatus && attendanceStatus.toLowerCase() !== 'present') {
                         content = (
                             <div className="task-summary-container">
                                 <div className="task-summary-item task-summary-leave">
@@ -482,15 +504,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                             </div>
                         );
                     } else if (isWeekend) {
-                        if (dayStart.getTime() <= todayStart.getTime()) {
-                            content = (
-                                <div className="task-summary-container">
-                                    <div className="task-summary-item task-summary-weekoff">
-                                        <span className="label">Week off</span>
-                                    </div>
+                        content = (
+                            <div className="task-summary-container">
+                                <div className="task-summary-item task-summary-weekoff">
+                                    <span className="label">Week off</span>
                                 </div>
-                            );
-                        }
+                            </div>
+                        );
                     } else if (!attendanceStatus && dayStart.getTime() <= todayStart.getTime()) {
                          content = (
                             <div className="task-summary-container">
@@ -760,7 +780,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             .sort((a, b) => a.getTime() - b.getTime())[0];
 
         const holidayDates = new Set(
-            holidays.map(h => parseDate(h)?.toDateString()).filter(Boolean)
+            holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean)
         );
 
         const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1016,7 +1036,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 .sort((a, b) => a.getTime() - b.getTime())[0]; 
 
             const holidayDates = new Set(
-                holidays.map(h => parseDate(h)?.toDateString()).filter(Boolean)
+                holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean)
             );
 
             // If there are no attendance records at all for this employee
@@ -1820,6 +1840,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                     tasksByDate={tasksByDate}
                                     setSelectedCalendarDate={setSelectedCalendarDate}
                                     userAttendanceByDate={userAttendanceByDate}
+                                    holidays={holidays}
                                 />
                             )}
                         </main>
