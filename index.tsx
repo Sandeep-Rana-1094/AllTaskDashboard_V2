@@ -4,7 +4,7 @@ import { ChecklistSystem } from './ChecklistSystem.tsx';
 import { DelegationSystem } from './DelegationSystem.tsx';
 import { TaskDashboardSystem } from './TaskDashboardSystem.tsx';
 import { 
-    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory
+    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday
 } from './types';
 import { useLocalStorage, robustCsvParser } from './utils';
 
@@ -660,7 +660,7 @@ const App = () => {
     const [allDashboardTasks, setAllDashboardTasks] = useState<DashboardTask[]>([]);
     const [attendanceData, setAttendanceData] = useState<AttendanceData[]>([]);
     const [dailyAttendanceData, setDailyAttendanceData] = useState<DailyAttendance[]>([]);
-    const [holidays, setHolidays] = useState<string[]>([]);
+    const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
 
     // Loading and Error State
@@ -805,7 +805,7 @@ const App = () => {
         const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${leavesSheetName}&tq=${dailyAttendanceQuery}`;
 
         // Holidays Fetch
-        const holidaysQuery = encodeURIComponent('SELECT T WHERE T IS NOT NULL');
+        const holidaysQuery = encodeURIComponent('SELECT S, T WHERE T IS NOT NULL');
         const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${leavesSheetName}&tq=${holidaysQuery}`;
 
         // Task History Fetch
@@ -965,7 +965,10 @@ const App = () => {
         const fetchHolidaysPromise = fetch(holidaysUrl).then(async response => {
             if (!response.ok) throw new Error("Network error fetching holidays data");
             const csvText = await response.text();
-            const parsedData: string[] = robustCsvParser(csvText).map(fields => (fields[0] || '').trim()).filter(Boolean);
+            const parsedData: Holiday[] = robustCsvParser(csvText).map(fields => ({
+                name: (fields[0] || 'Holiday').trim(),
+                date: (fields[1] || '').trim(),
+            })).filter(item => item.date);
             setHolidays(parsedData);
         });
 
@@ -1023,7 +1026,7 @@ const App = () => {
             
             if (holidaysResult.status === 'rejected') {
                 console.error("Data fetch error (Holidays):", holidaysResult.reason);
-                setHolidaysError('Failed to load Holidays. Please ensure column T in the "Leaves" sheet is correctly formatted and the sheet is public.');
+                setHolidaysError('Failed to load Holidays. Please ensure columns S (Name) and T (Date) in the "Leaves" sheet are correctly formatted and the sheet is public.');
             }
 
             if (historyResult.status === 'rejected') {
