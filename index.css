@@ -909,22 +909,6 @@ textarea {
   }
 }
 
-@media (max-width: 900px) {
-    main {
-        padding: 24px;
-    }
-}
-
-@media (max-width: 600px) {
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-    .modal-content {
-        width: 95%;
-        padding: 20px;
-    }
-}
-
 /* --- New Task Dashboard Styles --- */
 .task-dashboard-layout {
     padding: 24px;
@@ -1681,7 +1665,7 @@ textarea {
 
 .mis-task-table tbody tr.clickable-row {
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color: 0.2s;
 }
 
 .mis-task-table tbody tr.clickable-row:hover {
@@ -2059,4 +2043,175 @@ textarea {
     text-align: center;
     padding: 40px;
     color: var(--subtle-text);
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 1024px) {
+    .dashboard-main {
+        grid-template-columns: 240px 1fr; /* Slimmer sidebar for tablets */
+    }
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+}
+
+@media (max-width: 800px) {
+    /* --- General Layout --- */
+    body {
+        font-size: 14px; /* Base font size reduction */
+    }
+    main {
+        padding: 16px;
+    }
+    .task-dashboard-layout {
+        padding: 16px;
+    }
+    
+    /* --- Header --- */
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 12px;
+    }
+    .header-left, .header-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .header-controls {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .header-user-info {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .mode-switcher {
+        width: 100%;
+        flex-direction: column;
+    }
+    .mode-switcher button {
+        flex-grow: 1;
+    }
+
+    /* --- Dashboard --- */
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+    .dashboard-header-left {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+        border-bottom: none;
+    }
+    .dashboard-tabs {
+        padding-left: 0;
+        margin-left: 0;
+        border-left: none;
+    }
+    .dashboard-header-right {
+        width: 100%;
+        padding-left: 0;
+        justify-content: space-between;
+    }
+    .dashboard-main {
+        grid-template-columns: 1fr;
+    }
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* --- Tables --- */
+    .table-container {
+        overflow-x: auto; /* CRITICAL for table responsiveness */
+    }
+    .checklist-table, .pending-tasks-table, .mis-task-table {
+        min-width: 700px; /* Force horizontal scroll on small screens */
+    }
+    .checklist-table th, .checklist-table td {
+        padding: 8px;
+    }
+    .pending-tasks-table th, .pending-tasks-table td {
+        padding: 8px 4px;
+        white-space: nowrap; /* Prevent ugly wrapping in table headers */
+    }
+    .pending-tasks-table th:nth-child(4), /* Task Column */
+    .pending-tasks-table td:nth-child(4) {
+        white-space: normal; /* Allow task description to wrap */
+        min-width: 250px;
+    }
+
+
+    /* --- Filters & Forms --- */
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .mis-filters {
+        grid-template-columns: 1fr;
+    }
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    /* --- MIS View --- */
+    .highlights-grid {
+        grid-template-columns: 1fr;
+    }
+    .mis-report-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    /* --- Calendar --- */
+    .calendar-header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: stretch;
+    }
+    .calendar-day {
+        min-height: 80px;
+        padding: 4px;
+        font-size: 0.8rem;
+    }
+    .calendar-day .day-number {
+        font-size: 0.9em;
+    }
+    .task-summary-container {
+        font-size: 0.8em;
+    }
+
+    .modal-content {
+        width: 95%;
+        padding: 20px;
+    }
+    
+}
+
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.2rem;
+    }
+    .dashboard-title-section h2 {
+        font-size: 1.2rem;
+    }
+    .mode-switcher button {
+        font-size: 0.8rem;
+        padding: 6px 8px;
+    }
+    .header-user-info span {
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .header-user-info .user-role {
+        display: none;
+    }
+    .last-updated-text {
+        display: none; /* Hide for very small screens to save space */
+    }
 }
