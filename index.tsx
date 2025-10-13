@@ -1131,7 +1131,7 @@ const App = () => {
                 </div>
                 <div className="header-controls">
                      <div className="header-user-info">
-                        <span>Welcome, {authenticatedUser.mailId}</span>
+                        <span>{authenticatedUser.mailId}</span>
                         <span className="user-role">{authenticatedUser.role}</span>
                         <button className="btn btn-logout" onClick={handleLogout}>Logout</button>
                     </div>
