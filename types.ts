@@ -1,4 +1,5 @@
 
+
 export interface Task {
   id: string;
   description: string;
@@ -82,6 +83,11 @@ export interface Person {
 export interface AttendanceData {
     email: string;
     daysPresent: number;
+}
+
+export interface Holiday {
+    name: string;
+    date: string;
 }
 
 export interface DailyAttendance {
