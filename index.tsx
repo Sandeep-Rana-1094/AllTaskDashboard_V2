@@ -35,7 +35,7 @@ declare var ScriptApp: any; // Added for trigger setup
 // 2. Select "New deployment".
 // 3. In the dialog, click the gear icon next to "Select type" and choose "Web app".
 // 4. Fill in the deployment settings:
-//    - Description: (Optional) e.g., "Task Delegator v3.3 - Batch Processing"
+//    - Description: (Optional) e.g., "Task Delegator v3.5 - Undone Fix"
 //    - Execute as: ME (your.email@domain.com) <-- CRITICAL
 //    - Who has access: Anyone <-- CRITICAL FOR THE APP TO WORK
 // 5. Click "Deploy".
@@ -143,17 +143,17 @@ function findRow(sheet, config, matchValue) {
 }
 
 // -----------------------------------------------------------------------------
-// ** MODIFIED: doPost now queues some requests and processes others directly. **
-// This makes the UI extremely fast for "Mark Done", but provides immediate
-// feedback for all other administrative actions.
+// ** MODIFIED: doPost now correctly queues some requests and processes others directly. **
+// This makes the UI extremely fast for "Mark Done", while guaranteeing "Undone" works correctly.
 // -----------------------------------------------------------------------------
 function doPost(e) {
   try {
     var request = JSON.parse(e.postData.contents);
     
-    // --- CONDITIONAL PROCESSING ---
-    // Only queue "Mark Done" requests for the dashboard. Process everything else immediately.
-    if (request.sheetName === 'Done Task Status') {
+    // --- QUEUE LOGIC ---
+    // For 'Done Task Status', only queue 'create' and 'batchCreate' actions for performance.
+    // We exit early from the function if an action is queued.
+    if (request.sheetName === 'Done Task Status' && (request.action === 'create' || request.action === 'batchCreate')) {
       console.log("Queueing request for 'Done Task Status'. Action: " + request.action);
       
       var masterDoc = SpreadsheetApp.openById(MASTER_SHEET_ID);
@@ -172,22 +172,23 @@ function doPost(e) {
           message: 'Request queued successfully.' 
         }))
         .setMimeType(ContentService.MimeType.JSON);
-
-    } else {
-      // Process all other requests synchronously.
-      console.log("Processing synchronously. Action: " + request.action + " for sheet: " + (request.sheetName || 'N/A'));
-      _processSingleRequest(request); // This function will throw an error on failure
-      
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          status: 'success',
-          message: 'Request processed successfully.'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
     }
 
+    // --- SYNCHRONOUS LOGIC ---
+    // All other requests fall through and are processed immediately.
+    // This now correctly handles 'delete' for 'Done Task Status'.
+    console.log("Processing synchronously. Action: " + request.action + " for sheet: " + (request.sheetName || 'N/A'));
+    _processSingleRequest(request); // This function will throw an error on failure
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Request processed successfully.'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+
   } catch (err) {
-    // This catch block now handles errors from both queuing and synchronous processing.
+    // This catch block handles errors from both queuing and synchronous processing.
     console.error("Error in doPost: " + err.toString() + "\nStack: " + err.stack);
     return ContentService
       .createTextOutput(JSON.stringify({ 
@@ -682,7 +683,7 @@ const App = () => {
     // --- ACTION REQUIRED (STEP 2 from instructions at top of file) ---
     // PASTE YOUR NEW DEPLOYMENT URL HERE.
     // The URL you get after deploying the script from the MASTER workbook's script editor.
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxRuamiyfOk1vy7e5CyLPMioX9YAL8ozclaZOGWn966LywwLpezSmzc2FYEJvGQEeUx/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycVyRxnryzzSxgnfrsZFT0HEWx8VDl60rjDxWUxw9V_blHBP6HjD9W9mUsLlc7cD0_/exec";
     
     const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbxbNrwhuhCxoTQlXwgN2XAClofwGIUe2-H2QpqMX8-KUN6-wgczXjW1NSl-NvhVOf3g/exec";
 
