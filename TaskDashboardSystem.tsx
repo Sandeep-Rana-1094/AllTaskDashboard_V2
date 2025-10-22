@@ -847,8 +847,12 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const otherStatusesBreakdown: [string, number][] = [];
 
         for (const [status, count] of statusCounts.entries()) {
-            if (PRESENT_STATUSES.includes(status.toLowerCase())) {
+            const lowerCaseStatus = status.toLowerCase();
+            if (PRESENT_STATUSES.includes(lowerCaseStatus)) {
                 presentCount += count;
+            } else if (lowerCaseStatus === 'half day') {
+                presentCount += (count * 0.5);
+                otherStatusesBreakdown.push([status, count]);
             } else {
                 otherStatusesBreakdown.push([status, count]);
             }
@@ -1109,8 +1113,12 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const otherStatusesBreakdown: [string, number][] = [];
 
             for (const [status, count] of statusCounts.entries()) {
-                if (PRESENT_STATUSES.includes(status.toLowerCase())) {
+                const lowerCaseStatus = status.toLowerCase();
+                if (PRESENT_STATUSES.includes(lowerCaseStatus)) {
                     presentCount += count;
+                } else if (lowerCaseStatus === 'half day') {
+                    presentCount += (count * 0.5);
+                    otherStatusesBreakdown.push([status, count]);
                 } else {
                     otherStatusesBreakdown.push([status, count]);
                 }
