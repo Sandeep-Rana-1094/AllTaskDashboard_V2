@@ -687,23 +687,23 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         }
     }, [selectedMisEmployeeName]);
 
-    // Filter out tasks planned on weekends from all calculations for "My Dashboard".
+    // Filter out tasks planned on Sundays from all calculations for "My Dashboard".
     const weekdayTasks = useMemo(() => {
         return dashboardTasks.filter(task => {
             const plannedDate = parseDate(task.planned);
             if (!plannedDate) return true; // Keep if date is invalid
             const day = plannedDate.getDay();
-            return day !== 0 && day !== 6; // Exclude Sunday (0) and Saturday (6)
+            return day !== 0; // Exclude Sunday (0)
         });
     }, [dashboardTasks]);
     
-    // Filter out tasks planned on weekends from all calculations for "Employee MIS".
+    // Filter out tasks planned on Sundays from all calculations for "Employee MIS".
     const misWeekdayTasks = useMemo(() => {
         return misTasks.filter(task => {
             const plannedDate = parseDate(task.planned);
             if (!plannedDate) return true; // Keep if date is invalid
             const day = plannedDate.getDay();
-            return day !== 0 && day !== 6; // Exclude Sunday (0) and Saturday (6)
+            return day !== 0; // Exclude Sunday (0)
         });
     }, [misTasks]);
 
@@ -847,12 +847,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const otherStatusesBreakdown: [string, number][] = [];
 
         for (const [status, count] of statusCounts.entries()) {
-            const lowerCaseStatus = status.toLowerCase();
-            if (PRESENT_STATUSES.includes(lowerCaseStatus)) {
+            if (PRESENT_STATUSES.includes(status.toLowerCase())) {
                 presentCount += count;
-            } else if (lowerCaseStatus === 'half day') {
-                presentCount += (count * 0.5);
-                otherStatusesBreakdown.push([status, count]);
             } else {
                 otherStatusesBreakdown.push([status, count]);
             }
@@ -1113,12 +1109,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const otherStatusesBreakdown: [string, number][] = [];
 
             for (const [status, count] of statusCounts.entries()) {
-                const lowerCaseStatus = status.toLowerCase();
-                if (PRESENT_STATUSES.includes(lowerCaseStatus)) {
+                if (PRESENT_STATUSES.includes(status.toLowerCase())) {
                     presentCount += count;
-                } else if (lowerCaseStatus === 'half day') {
-                    presentCount += (count * 0.5);
-                    otherStatusesBreakdown.push([status, count]);
                 } else {
                     otherStatusesBreakdown.push([status, count]);
                 }
@@ -1731,7 +1723,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
                         <main className="dashboard-content">
                              <div className="dashboard-view-switcher">
-                                <button onClick={() => setCurrentView('stats')} className={currentView === 'stats' ? 'active' : ''}>Status View</button>
+                                <button onClick={() => setCurrentView('stats')} className={currentView === 'stats' ? 'active' : ''}>Stats View</button>
                                 <button onClick={() => setCurrentView('calendar')} className={currentView === 'calendar' ? 'active' : ''}>Calendar View</button>
                             </div>
                             {currentView === 'stats' ? (
