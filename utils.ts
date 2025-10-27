@@ -1,6 +1,3 @@
-
-
-
 import React, { useState } from 'react';
 import { Task, Holiday } from './types';
 
@@ -246,7 +243,7 @@ export const robustCsvParser = (csvText: string): string[][] => {
     return rows.slice(1).map(row => row.map(field => field.trim().replace(/^"|"$/g, '')));
 };
 
-export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, holidays: Holiday[]): number => {
+export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, holidays: Holiday[], options?: { isSaturdayWorkday?: boolean }): number => {
     // Create copies and normalize to midnight to compare dates only
     const pDate = new Date(plannedDate);
     pDate.setHours(0, 0, 0, 0);
@@ -273,7 +270,9 @@ export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, h
         currentDate.setDate(currentDate.getDate() + 1);
         
         const dayOfWeek = currentDate.getDay(); // Sunday: 0, Saturday: 6
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const isWeekend = options?.isSaturdayWorkday
+            ? dayOfWeek === 0 // Only Sunday is a weekend
+            : dayOfWeek === 0 || dayOfWeek === 6; // Sunday and Saturday are weekends
         const isHoliday = holidayDateStrings.has(currentDate.toDateString());
 
         if (!isWeekend && !isHoliday) {
