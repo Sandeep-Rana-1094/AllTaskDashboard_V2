@@ -35,7 +35,7 @@ declare var ScriptApp: any; // Added for trigger setup
 // 2. Select "New deployment".
 // 3. In the dialog, click the gear icon next to "Select type" and choose "Web app".
 // 4. Fill in the deployment settings:
-//    - Description: (Optional) e.g., "Task Delegator v3.5 - Undone Fix"
+//    - Description: (Optional) e.g., "Task Delegator v3.6 - Batch Processing Fix"
 //    - Execute as: ME (your.email@domain.com) <-- CRITICAL
 //    - Who has access: Anyone <-- CRITICAL FOR THE APP TO WORK
 // 5. Click "Deploy".
@@ -65,6 +65,7 @@ var MASTER_SHEET_ID = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
 var DELEGATION_SHEET_ID = '1Znih9FtcuqTJSJtS7peoBuJ8TijOXQl9eiWrGcAmXAg';
 var TASK_ATTACHMENTS_FOLDER_NAME = "Task Attachments"; // Define the folder name for uploads
 var QUEUE_SHEET_NAME = 'RequestQueue'; // Name for the new request queue sheet
+var BATCH_SIZE = 50; // Process up to 50 requests per run to avoid timeouts
 
 // -----------------------------------------------------------------------------
 // ** NEW ** Configuration for each sheet, including which spreadsheet it's in.
@@ -200,8 +201,8 @@ function doPost(e) {
 }
 
 // -----------------------------------------------------------------------------
-// ** NEW OPTIMIZED BATCH PROCESSING: Processes the entire queue in a single run for high performance. **
-// ** Reads all requests, prepares all rows in memory, then writes them to the sheets in single batch operations. **
+// ** NEW: BATCH PROCESSING that processes a fixed number of items per run to prevent timeouts. **
+// ** It reads a batch, prepares rows, writes them, and then deletes ONLY the processed rows from the queue. **
 // -----------------------------------------------------------------------------
 function processQueue() {
   var lock = LockService.getScriptLock();
@@ -219,20 +220,18 @@ function processQueue() {
     queueSheet = masterDoc.getSheetByName(QUEUE_SHEET_NAME);
     
     if (!queueSheet || queueSheet.getLastRow() === 0) {
-      console.log("RequestQueue sheet not found or is empty. Exiting.");
-      return;
+      console.log("RequestQueue sheet is empty. Exiting.");
+      return; // The 'finally' block will still run to release the lock.
     }
 
-    var dataRange = queueSheet.getDataRange();
+    var totalRowsInQueue = queueSheet.getLastRow();
+    numRowsToProcess = Math.min(totalRowsInQueue, BATCH_SIZE);
+
+    console.log("Optimized Batch Processing: Starting for " + numRowsToProcess + " of " + totalRowsInQueue + " item(s).");
+
+    // Get only the rows for the current batch from the top of the sheet
+    var dataRange = queueSheet.getRange(1, 1, numRowsToProcess, 1);
     var data = dataRange.getValues();
-    numRowsToProcess = data.length;
-
-    if (numRowsToProcess === 0) {
-        console.log("Queue is empty.");
-        return;
-    }
-
-    console.log("Optimized Batch Processing: Starting for " + numRowsToProcess + " item(s).");
 
     // --- BATCH PROCESSING LOGIC ---
     var doneTaskRows = [];
@@ -256,7 +255,7 @@ function processQueue() {
     var doneTaskHeaders = doneTaskSheet.getRange(1, 1, 1, doneTaskSheet.getLastColumn()).getValues()[0];
     var normalizedDoneTaskHeaders = doneTaskHeaders.map(function(h) { return String(h).trim().toLowerCase(); });
 
-    // 1. PREPARE DATA: Loop through queued items and build arrays for batch writing.
+    // 1. PREPARE DATA: Loop through the batch of queued items.
     data.forEach(function(row, index) {
       if (row[0]) { // Ensure row is not empty
         try {
@@ -326,12 +325,13 @@ function processQueue() {
       historySheet.getRange(historySheet.getLastRow() + 1, 1, historyRows.length, 5).setValues(historyRows);
     }
     
-    console.log("Batch processing complete.");
+    console.log("Batch processing complete for this run.");
 
   } catch (e) {
     console.error("A critical error occurred during processQueue execution: " + e.toString() + "\nStack: " + e.stack);
-    numRowsToProcess = 0; 
+    numRowsToProcess = 0; // Prevent deletion of rows that may have caused an error
   } finally {
+    // This is the key change: only delete the rows that were processed in this batch.
     if (queueSheet && numRowsToProcess > 0) {
       try {
         queueSheet.deleteRows(1, numRowsToProcess);
@@ -342,7 +342,7 @@ function processQueue() {
     }
     
     lock.releaseLock();
-    console.log("Queue processing finished. Lock released.");
+    console.log("Queue processing finished for this run. Lock released.");
   }
 }
 
@@ -463,6 +463,8 @@ const simpleHash = (str: string): string => {
     }
     return String(hash);
 };
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 
 // --- UI COMPONENTS ---
@@ -683,7 +685,7 @@ const App = () => {
     // --- ACTION REQUIRED (STEP 2 from instructions at top of file) ---
     // PASTE YOUR NEW DEPLOYMENT URL HERE.
     // The URL you get after deploying the script from the MASTER workbook's script editor.
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycVyRxnryzzSxgnfrsZFT0HEWx8VDl60rjDxWUxw9V_blHBP6HjD9W9mUsLlc7cD0_/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxBeTwQyh7wbX4DuUNEh-3OeixyCjmGnHatgn3Dff14Dn5NVI5wC-DUzz-aFxk5p2s6/exec";
     
     const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbxbNrwhuhCxoTQlXwgN2XAClofwGIUe2-H2QpqMX8-KUN6-wgczXjW1NSl-NvhVOf3g/exec";
 
@@ -714,325 +716,220 @@ const App = () => {
 
         const sheetId = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
         const delegationSheetId = '1Znih9FtcuqTJSJtS7peoBuJ8TijOXQl9eiWrGcAmXAg';
+        const masterDashboardSheetId = '1tlHs1iKCEnhrNAZRMy8YiTMeLGtyd5QWJ09okevio_M';
 
-        // People Fetch
-        const peopleSheetName = 'Employee%20Data';
-        const peopleRange = 'B:Q';
-        const peopleUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${peopleSheetName}&range=${peopleRange}`;
-        
-        // Checklist Templates Fetch
-        const checklistSheetName = 'Task';
-        const checklistRange = 'A:J';
-        const checklistUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${checklistSheetName}&range=${checklistRange}`;
+        // URLs for fetching data
+        const peopleUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Employee%20Data&range=B:Q`;
+        const checklistUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Task&range=A:J`;
+        const masterUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Master Data')}&range=A:N`;
+        const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=Working%20Task%20Form`;
+        const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT J, U WHERE U IS NOT NULL')}`;
+        const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT P, Q, R, U WHERE R IS NOT NULL AND P IS NOT NULL')}`;
+        const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT S, T WHERE T IS NOT NULL')}`;
+        const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
 
-        // Master Tasks Fetch
-        const masterSheetName = 'Master Data';
-        const masterRange = 'A:N'; // Fetch up to column N for Status
-        const masterUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(masterSheetName)}&range=${masterRange}`;
-
-        // Delegation Tasks Fetch
-        const delegationSheetName = 'Working%20Task%20Form';
-        const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=${delegationSheetName}`;
-        
-        // NEW: Fetch and merge all dashboard-related tasks from their respective sources
-        const fetchAllDashboardDataPromise = (async () => {
-            const sources = [
-                { name: 'Checklist', id: '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs', sheet: 'DB' },
-                { name: 'Delegation', id: '1Znih9FtcuqTJSJtS7peoBuJ8TijOXQl9eiWrGcAmXAg', sheet: 'DB' },
-                { name: 'Master', id: '1tlHs1iKCEnhrNAZRMy8YiTMeLGtyd5QWJ09okevio_M', sheet: 'Master' }
-            ];
-
-            const parseDashboardTaskData = (csvText: string, source: string): DashboardTask[] => {
-                const parsedData = robustCsvParser(csvText);
-                return parsedData
-                    .filter(fields => fields.length > 1 && fields[1] && fields[1].trim() !== '') // Ensure there's a Task ID in Col B
-                    .map((fields, index) => ({
-                        id: `${source}-task-${fields[1] || `row-${index}`}`,
-                        timestamp: fields[0] || '',
-                        taskId: fields[1] || '',
-                        task: fields[2] || '',
-                        stepCode: fields[3] || '',
-                        planned: fields[4] || '',
-                        actual: (fields[5] || '').trim(),
-                        name: fields[6] || '',
-                        link: fields[7] || '',
-                        forPc: fields[8] || '',
-                        systemType: fields[9] || '',
-                        userName: (fields[14] || '').trim(),
-                        userEmail: (fields[15] || '').trim(),
-                        photoUrl: (fields[16] || '').trim(),
-                        attachmentUrl: (fields[17] || '').trim(),
-                    }));
-            };
-
-            const promises = sources.map(async (sourceInfo) => {
-                const url = `https://docs.google.com/spreadsheets/d/${sourceInfo.id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sourceInfo.sheet)}`;
-                try {
-                    const res = await fetch(url);
-
-                    if (!res.ok) {
-                        throw new Error(`Network error fetching sheet: ${sourceInfo.name} (Status: ${res.status}). Ensure the sheet is public.`);
-                    }
-
-                    const contentType = res.headers.get('content-type');
-                    if (!contentType || !contentType.includes('text/csv')) {
-                        // This often indicates a private sheet or incorrect sheet name, which returns an HTML page instead of CSV.
-                        throw new Error(`Received a non-CSV response for sheet "${sourceInfo.name}". Please ensure it is published to the web and the name is spelled correctly.`);
-                    }
-                    
-                    const csv = await res.text();
-                    return parseDashboardTaskData(csv, sourceInfo.name.toLowerCase());
-                } catch (err) {
-                    // This will catch network errors (like "Failed to fetch" from a CORS redirect) and the errors thrown above.
-                    console.error(`Failed to fetch or process sheet "${sourceInfo.name}" from URL: ${url}`, err);
-                    // Re-throw the original error so Promise.all rejects and the UI can show a failure message.
-                    throw err; 
-                }
-            });
-
-            const results = await Promise.all(promises);
-            const allTasks = results.flat();
-            setAllDashboardTasks(allTasks);
-        })();
-
-
-        // Attendance Data Fetch
-        const leavesSheetName = 'Leaves';
-        const leavesQuery = encodeURIComponent('SELECT J, U WHERE U IS NOT NULL');
-        const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${leavesSheetName}&tq=${leavesQuery}`;
-        
-        // Daily Attendance Fetch for Calendar
-        const dailyAttendanceQuery = encodeURIComponent('SELECT P, Q, R, U WHERE R IS NOT NULL AND P IS NOT NULL'); // P:Date, Q:Status, R:Name, U:Email
-        const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${leavesSheetName}&tq=${dailyAttendanceQuery}`;
-
-        // Holidays Fetch
-        const holidaysQuery = encodeURIComponent('SELECT S, T WHERE T IS NOT NULL');
-        const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${leavesSheetName}&tq=${holidaysQuery}`;
-
-        // Task History Fetch
-        const historySheetName = 'History';
-        const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${historySheetName}`;
-
-
-        const fetchPeoplePromise = fetch(peopleUrl).then(async response => {
+        const fetchWithHandling = async (url: string, processor: (csv: string) => void) => {
+            const response = await fetch(url);
             if (!response.ok) throw new Error(`Network response was not ok. Status: ${response.status}`);
             const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('text/csv')) throw new Error('Received non-CSV response for people. The Google Sheet may be private.');
+            if (!contentType || !contentType.includes('text/csv')) throw new Error('Received non-CSV response. The Google Sheet may be private or incorrectly named.');
             const csvText = await response.text();
-            const parsedData = robustCsvParser(csvText);
-
-            const parsedPeople: Person[] = parsedData.map(fields => {
-                // Per user request: Name is in Column B. Email is in Column F.
-                let name = (fields[0] || '').trim(); // Column B for Name
-                const email = (fields[4] || '').trim(); // Column F for Email
-                const photoUrl = (fields[15] || '').trim(); // Column Q for Photo URL
-                
-                // If name is empty but email exists, generate a fallback name from the email.
-                if (!name && email) {
-                    const namePart = email.split('@')[0];
-                    name = namePart
-                        .replace(/[._-]/g, ' ')
-                        .split(' ')
-                        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                        .join(' ');
-                }
-
-                return { name, email, photoUrl };
-            }).filter(p => p.name && p.email); // We need both a name and an email for a person to be useful.
-            
-            if (parsedPeople.length === 0) {
-                 setPeopleError('No valid employee data found. Please ensure the "Employee Data" sheet has columns for Name (B) and especially Email (F) populated.');
-                 setPeople([]);
-            } else {
-                setPeople(parsedPeople);
-            }
-        });
-
-        const fetchChecklistsPromise = fetch(checklistUrl).then(async response => {
-             if (!response.ok) throw new Error("Network error fetching checklists");
-             const contentType = response.headers.get('content-type');
-             if (!contentType || !contentType.includes('text/csv')) throw new Error('Received non-CSV response for checklists. The "Task" Google Sheet may be private.');
-             const csvText = await response.text();
-             const parsedData = robustCsvParser(csvText);
-             const importedChecklists: Checklist[] = parsedData.filter(fields => fields.length > 0 && fields[0] && fields[0].trim() !== '').map((fields, index) => ({
-                 id: `sheet-item-${simpleHash((fields[0] || '') + '-' + (fields[1] || '') + '-' + index)}`,
-                 task: fields[0] || '',
-                 doer: fields[1] || '',
-                 frequency: fields[2] || 'D',
-                 date: fields[3] || '',
-                 buddy: fields[4] || '',
-                 secondBuddy: fields[5] || '',
-             }));
-             setChecklists(importedChecklists);
-             return importedChecklists;
-        });
-
-        const fetchMasterTasksPromise = fetch(masterUrl).then(async response => {
-            if (!response.ok) throw new Error("Network error fetching master tasks");
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('text/csv')) throw new Error('Received non-CSV response for Master Tasks. The "Master Data" Google Sheet may be private.');
-            const csvText = await response.text();
-            const parsedData = robustCsvParser(csvText);
-            const importedMasterTasks: MasterTask[] = parsedData
-                .filter(fields => fields.length > 2 && fields[2] && fields[2].trim() !== '') // Filter by Task in Col C
-                .map((fields, index) => ({
-                    id: `master-task-${fields[0] || `row-${index}`}`, // Base client ID on Col A
-                    taskId: fields[0] || '',        // Col A
-                    plannedDate: fields[1] || '',   // Col B
-                    actualDate: fields[7] || '',    // Col H
-                    taskDescription: fields[2] || '', // Col C
-                    doer: fields[3] || '',          // Col D
-                    originalDoer: fields[11] || '',  // Col L
-                    frequency: fields[4] || '',     // Col E
-                    pc: fields[9] || '',            // Col J
-                    status: fields[13] || '',       // Col N
-                }));
-            setMasterTasks(importedMasterTasks);
-        });
-
-        const fetchDelegationTasksPromise = fetch(delegationUrl).then(async response => {
-            if (!response.ok) throw new Error("Network error fetching delegation tasks");
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('text/csv')) throw new Error('Received non-CSV response for Delegation Tasks. The "Working Task Form" Google Sheet may be private.');
-            const csvText = await response.text();
-            const parsedData = robustCsvParser(csvText);
-            const allDelegationTasks: (DelegationTask & { status?: string })[] = parsedData
-                .map((fields, index) => {
-                    const [
-                        timestamp,      // A: Timestamp
-                        assignee,       // B: Task Assign to
-                        task,           // C: Task
-                        plannedDate,    // D: Planned Date
-                        assignerEmail,  // E: Email address
-                        assigner,       // F: Task Assign by
-                        delegateEmail,  // G: Delegate Email
-                        taskId,         // H: Task ID
-                        actualDate,     // I: Actual Date
-                        status          // J: Status
-                    ] = fields;
-
-                    return {
-                        id: `delegation-${taskId || `row-${index}`}`,
-                        timestamp: timestamp || '',
-                        assignee: assignee || '',
-                        task: task || '',
-                        plannedDate: plannedDate || '',
-                        assignerEmail: assignerEmail || '',
-                        assigner: assigner || '',
-                        delegateEmail: delegateEmail || '',
-                        taskId: taskId || '',
-                        actualDate: actualDate || '',
-                        status: status || '',
-                    };
-                });
-
-            const importedDelegationTasks = allDelegationTasks.filter(task => {
-                const hasTask = task.task && task.task.trim() !== '';
-                const isCancelled = task.status && task.status.toLowerCase() === 'cancel';
-                // const isDone = task.status && task.status.toLowerCase() === 'done'; // Removed to allow "Done" tasks to appear for the "Undone" button.
-                return hasTask && !isCancelled;
-            });
-            setDelegationTasks(importedDelegationTasks);
-        });
-
-        const fetchAttendancePromise = fetch(leavesUrl).then(async response => {
-            if (!response.ok) throw new Error("Network error fetching attendance data");
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('text/csv')) throw new Error('Received non-CSV response for Attendance Data. The "Leaves" Google Sheet may be private.');
-            const csvText = await response.text();
-            const parsedData: AttendanceData[] = robustCsvParser(csvText).map(fields => {
-                const daysPresent = parseFloat(fields[0]); // Column J
-                const email = fields[1]; // Column U
-                return {
-                    email: email || '',
-                    daysPresent: !isNaN(daysPresent) ? daysPresent : 0,
-                };
-            }).filter(item => item.email);
-            setAttendanceData(parsedData);
-        });
-        
-        const fetchDailyAttendancePromise = fetch(dailyAttendanceUrl).then(async response => {
-            if (!response.ok) throw new Error("Network error fetching daily attendance data");
-            const csvText = await response.text();
-            const parsedData: DailyAttendance[] = robustCsvParser(csvText).map(fields => ({
-                date: (fields[0] || '').trim(),
-                status: (fields[1] || '').trim(),
-                name: (fields[2] || '').trim(),
-                email: (fields[3] || '').trim().toLowerCase(),
-            })).filter(item => item.name && item.date && item.status);
-            setDailyAttendanceData(parsedData);
-        });
-        
-        const fetchHolidaysPromise = fetch(holidaysUrl).then(async response => {
-            if (!response.ok) throw new Error("Network error fetching holidays data");
-            const csvText = await response.text();
-            const parsedData: Holiday[] = robustCsvParser(csvText).map(fields => ({
-                name: (fields[0] || 'Holiday').trim(),
-                date: (fields[1] || '').trim(),
-            })).filter(item => item.date);
-            setHolidays(parsedData);
-        });
-
-        const fetchHistoryPromise = fetch(historyUrl).then(async response => {
-            if (!response.ok) throw new Error("Network error fetching history data");
-            const csvText = await response.text();
-            const parsedData: TaskHistory[] = robustCsvParser(csvText).map(fields => ({
-                timestamp: (fields[0] || '').trim(),
-                systemType: (fields[1] || '').trim(),
-                task: (fields[2] || '').trim(),
-                changedBy: (fields[3] || '').trim(),
-                change: (fields[4] || '').trim(),
-            })).filter(item => item.timestamp);
-            setTaskHistory(parsedData);
-        });
+            processor(csvText);
+        };
 
         try {
-            const results = await Promise.allSettled([fetchPeoplePromise, fetchChecklistsPromise, fetchMasterTasksPromise, fetchDelegationTasksPromise, fetchAllDashboardDataPromise, fetchAttendancePromise, fetchDailyAttendancePromise, fetchHolidaysPromise, fetchHistoryPromise]);
-            const [peopleResult, checklistsResult, masterTasksResult, delegationTasksResult, allDashboardTasksResult, attendanceResult, dailyAttendanceResult, holidaysResult, historyResult] = results;
-        
-            if (peopleResult.status === 'rejected') {
-                console.error("Data fetch error (People):", peopleResult.reason);
+            // --- SEQUENTIAL FETCHING TO PREVENT RATE-LIMITING ---
+
+            // 1. Fetch People
+            try {
+                await fetchWithHandling(peopleUrl, (csvText) => {
+                    const parsedData = robustCsvParser(csvText);
+                    const parsedPeople: Person[] = parsedData.map(fields => {
+                        let name = (fields[0] || '').trim(); // Column B for Name
+                        const email = (fields[4] || '').trim(); // Column F for Email
+                        const photoUrl = (fields[15] || '').trim(); // Column Q for Photo URL
+                        if (!name && email) {
+                            const namePart = email.split('@')[0];
+                            name = namePart.replace(/[._-]/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                        }
+                        return { name, email, photoUrl };
+                    }).filter(p => p.name && p.email);
+                    
+                    if (parsedPeople.length === 0) {
+                        setPeopleError('No valid employee data found. Please ensure the "Employee Data" sheet has columns for Name (B) and especially Email (F) populated.');
+                        setPeople([]);
+                    } else {
+                        setPeople(parsedPeople);
+                    }
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (People):", err);
                 setPeopleError('Failed to load team. Please make sure the "Employee Data" Google Sheet is public (set Share > General access > Anyone with the link) AND published to the web (File > Share > Publish to web).');
             }
+            await sleep(250);
 
-            if (checklistsResult.status === 'rejected') {
-               console.error("Data fetch error (Checklists):", checklistsResult.reason);
+            // 2. Fetch Checklists
+            try {
+                await fetchWithHandling(checklistUrl, (csvText) => {
+                     const parsedData = robustCsvParser(csvText);
+                     const importedChecklists: Checklist[] = parsedData.filter(fields => fields.length > 0 && fields[0] && fields[0].trim() !== '').map((fields, index) => ({
+                         id: `sheet-item-${simpleHash((fields[0] || '') + '-' + (fields[1] || '') + '-' + index)}`,
+                         task: fields[0] || '',
+                         doer: fields[1] || '',
+                         frequency: fields[2] || 'D',
+                         date: fields[3] || '',
+                         buddy: fields[4] || '',
+                         secondBuddy: fields[5] || '',
+                     }));
+                     setChecklists(importedChecklists);
+                });
+            } catch (err: any) {
+               console.error("Data fetch error (Checklists):", err);
                setChecklistsError('Failed to load Task List. Please ensure the "Task" sheet in the main Google Sheet is public and published to the web.');
             }
-    
-            if (masterTasksResult.status === 'rejected') {
-                console.error("Data fetch error (Master Tasks):", masterTasksResult.reason);
+            await sleep(250);
+            
+            // 3. Fetch Master Tasks
+            try {
+                await fetchWithHandling(masterUrl, (csvText) => {
+                    const parsedData = robustCsvParser(csvText);
+                    const importedMasterTasks: MasterTask[] = parsedData
+                        .filter(fields => fields.length > 2 && fields[2] && fields[2].trim() !== '')
+                        .map((fields, index) => ({
+                            id: `master-task-${fields[0] || `row-${index}`}`, taskId: fields[0] || '', plannedDate: fields[1] || '',
+                            actualDate: fields[7] || '', taskDescription: fields[2] || '', doer: fields[3] || '',
+                            originalDoer: fields[11] || '', frequency: fields[4] || '', pc: fields[9] || '', status: fields[13] || '',
+                        }));
+                    setMasterTasks(importedMasterTasks);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Master Tasks):", err);
                 setMasterTasksError('Failed to load Master Tasks. Please ensure the "Master Data" sheet in the main Google Sheet is public and published to the web.');
             }
+            await sleep(250);
 
-            if (delegationTasksResult.status === 'rejected') {
-                console.error("Data fetch error (Delegation Tasks):", delegationTasksResult.reason);
+            // 4. Fetch Delegation Tasks
+            try {
+                await fetchWithHandling(delegationUrl, (csvText) => {
+                     const parsedData = robustCsvParser(csvText);
+                     const allDelegationTasks: (DelegationTask & { status?: string })[] = parsedData.map((fields, index) => ({
+                        id: `delegation-${fields[7] || `row-${index}`}`, timestamp: fields[0] || '', assignee: fields[1] || '',
+                        task: fields[2] || '', plannedDate: fields[3] || '', assignerEmail: fields[4] || '', assigner: fields[5] || '',
+                        delegateEmail: fields[6] || '', taskId: fields[7] || '', actualDate: fields[8] || '', status: fields[9] || '',
+                     }));
+                     const importedDelegationTasks = allDelegationTasks.filter(task => {
+                        const hasTask = task.task && task.task.trim() !== '';
+                        const isCancelled = task.status && task.status.toLowerCase() === 'cancel';
+                        return hasTask && !isCancelled;
+                     });
+                     setDelegationTasks(importedDelegationTasks);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Delegation Tasks):", err);
                 setDelegationTasksError('Failed to load Delegation Tasks. Please make sure the "Working Task Form" Google Sheet is public (set Share > General access > Anyone with the link) AND published to the web (File > Share > Publish to web).');
             }
+            await sleep(250);
             
-            if (allDashboardTasksResult.status === 'rejected') {
-                console.error("Data fetch error (Dashboard/MIS Tasks):", allDashboardTasksResult.reason);
-                setAllDashboardTasksError('Failed to load Dashboard tasks. Please ensure the "Checklist", "Delegation", and "Master" sheets in the new Google Sheet are public and published to the web.');
+            // 5. Fetch All Dashboard Data
+            try {
+                const sources = [
+                    { name: 'Checklist', id: sheetId, sheet: 'DB' },
+                    { name: 'Delegation', id: delegationSheetId, sheet: 'DB' },
+                    { name: 'Master', id: masterDashboardSheetId, sheet: 'Master' }
+                ];
+
+                const parseDashboardTaskData = (csvText: string, source: string): DashboardTask[] => {
+                    const parsedData = robustCsvParser(csvText);
+                    return parsedData
+                        .filter(fields => fields.length > 1 && fields[1] && fields[1].trim() !== '')
+                        .map((fields, index) => ({
+                            id: `${source}-task-${fields[1] || `row-${index}`}`, timestamp: fields[0] || '', taskId: fields[1] || '', task: fields[2] || '', stepCode: fields[3] || '',
+                            planned: fields[4] || '', actual: (fields[5] || '').trim(), name: fields[6] || '', link: fields[7] || '', forPc: fields[8] || '',
+                            systemType: fields[9] || '', userName: (fields[14] || '').trim(), userEmail: (fields[15] || '').trim(),
+                            photoUrl: (fields[16] || '').trim(), attachmentUrl: (fields[17] || '').trim(),
+                        }));
+                };
+
+                const allTasks: DashboardTask[] = [];
+                for (const sourceInfo of sources) {
+                    const url = `https://docs.google.com/spreadsheets/d/${sourceInfo.id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sourceInfo.sheet)}`;
+                    try {
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error(`Network error fetching sheet: ${sourceInfo.name} (Status: ${res.status}). Ensure the sheet is public.`);
+                        const contentType = res.headers.get('content-type');
+                        if (!contentType || !contentType.includes('text/csv')) throw new Error(`Received a non-CSV response for sheet "${sourceInfo.name}". Please ensure it is published to the web and the name is spelled correctly.`);
+                        const csv = await res.text();
+                        allTasks.push(...parseDashboardTaskData(csv, sourceInfo.name.toLowerCase()));
+                    } catch (err) {
+                        console.error(`Failed to fetch or process sheet "${sourceInfo.name}" from URL: ${url}`, err);
+                        throw err; 
+                    }
+                    await sleep(250); // Delay between each dashboard source
+                }
+                setAllDashboardTasks(allTasks);
+            } catch (err: any) {
+                console.error("Data fetch error (Dashboard/MIS Tasks):", err);
+                setAllDashboardTasksError('Failed to load Dashboard tasks. Please ensure the "Checklist", "Delegation", and "Master" sheets in their respective Google Sheets are public and published to the web.');
             }
-            
-            if (attendanceResult.status === 'rejected') {
-                console.error("Data fetch error (Attendance):", attendanceResult.reason);
+            await sleep(250);
+
+            // 6. Fetch Attendance
+            try {
+                await fetchWithHandling(leavesUrl, (csvText) => {
+                    const parsedData: AttendanceData[] = robustCsvParser(csvText).map(fields => ({
+                        email: fields[1] || '',
+                        daysPresent: !isNaN(parseFloat(fields[0])) ? parseFloat(fields[0]) : 0,
+                    })).filter(item => item.email);
+                    setAttendanceData(parsedData);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Attendance):", err);
                 setAttendanceError('Failed to load Attendance Data. Please ensure the "Leaves" sheet in the main Google Sheet is public and published to the web.');
             }
-
-            if (dailyAttendanceResult.status === 'rejected') {
-                console.error("Data fetch error (Daily Attendance):", dailyAttendanceResult.reason);
-                setDailyAttendanceError('Failed to load Daily Attendance. Please ensure columns P (Date), Q (Status), R (Name), and U (Email) in the "Leaves" sheet are correctly formatted and the sheet is public.');
-            }
+            await sleep(250);
             
-            if (holidaysResult.status === 'rejected') {
-                console.error("Data fetch error (Holidays):", holidaysResult.reason);
+            // 7. Fetch Daily Attendance
+            try {
+                await fetchWithHandling(dailyAttendanceUrl, (csvText) => {
+                    const parsedData: DailyAttendance[] = robustCsvParser(csvText).map(fields => ({
+                        date: (fields[0] || '').trim(), status: (fields[1] || '').trim(),
+                        name: (fields[2] || '').trim(), email: (fields[3] || '').trim().toLowerCase(),
+                    })).filter(item => item.name && item.date && item.status);
+                    setDailyAttendanceData(parsedData);
+                });
+            } catch (err: any) {
+                 console.error("Data fetch error (Daily Attendance):", err);
+                 setDailyAttendanceError('Failed to load Daily Attendance. Please ensure columns P (Date), Q (Status), R (Name), and U (Email) in the "Leaves" sheet are correctly formatted and the sheet is public.');
+            }
+            await sleep(250);
+            
+            // 8. Fetch Holidays
+            try {
+                await fetchWithHandling(holidaysUrl, (csvText) => {
+                    const parsedData: Holiday[] = robustCsvParser(csvText).map(fields => ({
+                        name: (fields[0] || 'Holiday').trim(), date: (fields[1] || '').trim(),
+                    })).filter(item => item.date);
+                    setHolidays(parsedData);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Holidays):", err);
                 setHolidaysError('Failed to load Holidays. Please ensure columns S (Name) and T (Date) in the "Leaves" sheet are correctly formatted and the sheet is public.');
             }
-
-            if (historyResult.status === 'rejected') {
-                console.error("Data fetch error (History):", historyResult.reason);
-                setTaskHistoryError('Failed to load Task History. Please ensure the "History" sheet in the main Google Sheet is public and published to the web.');
+            await sleep(250);
+            
+            // 9. Fetch History
+            try {
+                await fetchWithHandling(historyUrl, (csvText) => {
+                    const parsedData: TaskHistory[] = robustCsvParser(csvText).map(fields => ({
+                        timestamp: (fields[0] || '').trim(), systemType: (fields[1] || '').trim(),
+                        task: (fields[2] || '').trim(), changedBy: (fields[3] || '').trim(),
+                        change: (fields[4] || '').trim(),
+                    })).filter(item => item.timestamp);
+                    setTaskHistory(parsedData);
+                });
+            } catch (err: any) {
+                 console.error("Data fetch error (History):", err);
+                 setTaskHistoryError('Failed to load Task History. Please ensure the "History" sheet in the main Google Sheet is public and published to the web.');
             }
 
         } catch (err) {
