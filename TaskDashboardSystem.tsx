@@ -1725,7 +1725,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
                         <main className="dashboard-content">
                              <div className="dashboard-view-switcher">
-                                <button onClick={() => setCurrentView('stats')} className={currentView === 'stats' ? 'active' : ''}>Stats View</button>
+                                <button onClick={() => setCurrentView('stats')} className={currentView === 'stats' ? 'active' : ''}>Status View</button>
                                 <button onClick={() => setCurrentView('calendar')} className={currentView === 'calendar' ? 'active' : ''}>Calendar View</button>
                             </div>
                             {currentView === 'stats' ? (
