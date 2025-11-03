@@ -60,9 +60,9 @@ const getMondayOfNWeeksAgo = (weeksAgo: number): Date => {
 
 const getPreviousWeekRange = () => {
     const lastMonday = getMondayOfNWeeksAgo(1);
-    const lastSaturday = new Date(lastMonday);
-    lastSaturday.setDate(lastMonday.getDate() + 5); // Changed to +5 to include Saturday
-    return { start: lastMonday, end: lastSaturday };
+    const lastFriday = new Date(lastMonday);
+    lastFriday.setDate(lastMonday.getDate() + 4); // Monday to Friday
+    return { start: lastMonday, end: lastFriday };
 };
 
 const getPeriodDateRange = (period: string): { start: Date; end: Date } => {
@@ -790,7 +790,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const d = new Date(periodStart);
             while (d <= periodEnd && d <= today) {
                 const dayOfWeek = d.getDay();
-                const isWeekend = dayOfWeek === 0; // Saturday is now a working day for "last week"
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday is 0, Saturday is 6
                 const isHoliday = holidayDates.has(d.toDateString());
                 if (!isWeekend && !isHoliday) {
                     wdCount++;
@@ -825,7 +825,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         while (loopDate <= periodEnd && loopDate <= today) {
             if (loopDate >= firstAttendanceDate) {
                 const dayOfWeek = loopDate.getDay();
-                const isWeekend = dayOfWeek === 0; // Saturday is now a working day for "last week"
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday is 0, Saturday is 6
                 const isHoliday = holidayDates.has(loopDate.toDateString());
 
                 if (!isWeekend && !isHoliday) {
@@ -926,8 +926,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const actualDate = parseDate(t.actual!);
             if (!plannedDate || !actualDate) return false;
             // A task is on time if the working days delay is 0.
-            // For "last week", Saturday is a working day.
-            return calculateWorkingDaysDelay(plannedDate, actualDate, holidays, { isSaturdayWorkday: true }) === 0;
+            // Saturday is now a week-off.
+            return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) === 0;
         });
         const onTime_Actual_Count = onTime_Actual_Tasks.length;
         const notOnTimeTasks = tasksCompletedFromPrevWeek.filter(t => !onTime_Actual_Tasks.includes(t));
@@ -1020,7 +1020,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         // --- DYNAMIC ATTENDANCE CALCULATION ---
         const attendanceBreakdown = (() => {
-            const isLastWeekReport = selectedMisPeriod === 'lastWeek';
             // Find all attendance records for the selected employee
             const employeeAttendanceRecords = dailyAttendanceData.filter(att => {
                 // Prioritize matching by email if available, as it's more reliable
@@ -1048,7 +1047,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 const today = new Date(); today.setHours(0, 0, 0, 0);
                 while (d <= periodEnd && d <= today) {
                     const dayOfWeek = d.getDay();
-                    const isWeekend = isLastWeekReport ? (dayOfWeek === 0) : (dayOfWeek === 0 || dayOfWeek === 6);
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(d.toDateString());
                     if (!isWeekend && !isHoliday) {
                         wdCount++;
@@ -1090,7 +1089,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 }
 
                 const dayOfWeek = loopDate.getDay();
-                const isWeekend = isLastWeekReport ? (dayOfWeek === 0) : (dayOfWeek === 0 || dayOfWeek === 6);
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const isHoliday = holidayDates.has(loopDate.toDateString());
 
                 if (!isWeekend && !isHoliday) {
@@ -1134,7 +1133,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         // --- Performance calculation (dynamic based on selected period) ---
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const isLastWeekReport = selectedMisPeriod === 'lastWeek';
         
         const employeeTasksForPeriod = misWeekdayTasks.filter(task => {
             if (task.userName.toLowerCase() !== selectedNameLower) return false;
@@ -1158,7 +1156,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const plannedDate = parseDate(t.planned);
             const actualDate = parseDate(t.actual!);
             if (!plannedDate || !actualDate) return false;
-            const delay = calculateWorkingDaysDelay(plannedDate, actualDate, holidays, { isSaturdayWorkday: isLastWeekReport });
+            const delay = calculateWorkingDaysDelay(plannedDate, actualDate, holidays);
             return delay > 0;
         });
 
@@ -1653,7 +1651,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                             const plannedDate = parseDate(task.planned);
                                                             const actualDate = parseDate(task.actual || '');
                                                             const delay = (plannedDate && actualDate)
-                                                                ? calculateWorkingDaysDelay(plannedDate, actualDate, holidays, { isSaturdayWorkday: selectedMisPeriod === 'lastWeek' })
+                                                                ? calculateWorkingDaysDelay(plannedDate, actualDate, holidays)
                                                                 : 0;
 
                                                             return (
