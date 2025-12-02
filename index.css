@@ -164,29 +164,35 @@ h2:not([style*="display: none"]) {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
 }
 
 .page-header h2 {
     margin-bottom: 0;
 }
 
+/* --- HEADER FIXES --- */
 header {
     padding: 12px 24px;
     background-color: var(--card-background);
     border-bottom: 1px solid var(--border-color);
-    box-shadow: var(--shadow-md); /* Slightly stronger shadow */
+    box-shadow: var(--shadow-md);
     position: sticky;
     top: 0;
     z-index: 10;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap; /* Allow wrapping on small screens */
+    gap: 16px;
 }
 
 .header-left {
     display: flex;
     align-items: center;
     gap: 20px;
+    flex-wrap: wrap; /* Prevent overlap */
 }
 
 header h1 {
@@ -197,43 +203,55 @@ header h1 {
     -webkit-text-fill-color: transparent;
     background-clip: text;
     text-fill-color: transparent;
+    margin-right: 12px;
+    white-space: nowrap;
 }
 
 .header-controls {
     display: flex;
     align-items: center;
     gap: 20px;
+    flex-wrap: wrap;
 }
 
 .header-user-info {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     font-size: 0.9rem;
     color: var(--subtle-text);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.header-user-info span:first-child {
+    font-weight: 500;
+    color: var(--text-color);
 }
 
 .header-user-info .user-role {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     padding: 2px 8px;
-    border-radius: var(--border-radius-sm);
-    background-color: var(--border-color);
-    color: var(--text-color);
+    border-radius: 12px;
+    background-color: #f3f4f6;
+    color: #4b5563;
     font-weight: 600;
+    border: 1px solid #e5e7eb;
 }
 
 .btn-logout {
     font-size: 0.8rem;
     padding: 6px 12px;
-    background-color: var(--danger-bg);
-    color: var(--danger-color);
-    border: 1px solid var(--danger-color);
+    background-color: #fee2e2;
+    color: #ef4444;
+    border: 1px solid #fecaca;
+    border-radius: var(--border-radius-sm);
+    font-weight: 500;
 }
 
 .btn-logout:hover:not(:disabled) {
     background-color: #fecaca;
-    border-color: var(--danger-color);
-    color: #991b1b;
+    color: #b91c1c;
 }
 
 .mode-switcher {
@@ -245,7 +263,6 @@ header h1 {
 }
 
 .mode-switcher button {
-    flex: 1;
     padding: 6px 12px;
     border: none;
     background-color: transparent;
@@ -263,6 +280,8 @@ header h1 {
     color: white;
     box-shadow: var(--shadow-sm);
 }
+
+/* --- END HEADER FIXES --- */
 
 form {
     display: flex;
@@ -920,6 +939,8 @@ textarea {
     justify-content: space-between;
     align-items: center;
     padding-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 16px;
 }
 
 .dashboard-header-left {
@@ -928,6 +949,8 @@ textarea {
     gap: 24px;
     border-bottom: 1px solid var(--border-color);
     flex-grow: 1;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
 }
 
 .dashboard-title-section {
@@ -952,6 +975,7 @@ textarea {
     font-weight: 600;
     color: var(--text-color);
     margin: 0;
+    white-space: nowrap;
 }
 
 .dashboard-tabs {
@@ -961,6 +985,7 @@ textarea {
     border-left: 1px solid var(--border-color);
     padding-left: 24px;
     height: 40px;
+    flex-wrap: wrap;
 }
 
 .dashboard-tabs button {
@@ -972,6 +997,7 @@ textarea {
     background-color: transparent;
     color: var(--subtle-text);
     transition: background-color 0.2s, color 0.2s;
+    white-space: nowrap;
 }
 
 .dashboard-tabs button.active {
@@ -2070,7 +2096,7 @@ textarea {
     /* --- Header --- */
     header {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         gap: 16px;
         padding: 12px;
     }
@@ -2079,26 +2105,26 @@ textarea {
         justify-content: space-between;
     }
     .header-controls {
-        flex-direction: column;
-        align-items: flex-start;
+        flex-wrap: wrap;
         gap: 12px;
     }
     .header-user-info {
         width: 100%;
         justify-content: space-between;
+        margin-top: 8px;
     }
     .mode-switcher {
         width: 100%;
-        flex-direction: column;
+        flex-direction: row;
     }
     .mode-switcher button {
-        flex-grow: 1;
+        flex: 1;
     }
 
     /* --- Dashboard --- */
     .dashboard-header {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         gap: 16px;
     }
     .dashboard-header-left {
@@ -2111,6 +2137,8 @@ textarea {
         padding-left: 0;
         margin-left: 0;
         border-left: none;
+        width: 100%;
+        overflow-x: auto;
     }
     .dashboard-header-right {
         width: 100%;
