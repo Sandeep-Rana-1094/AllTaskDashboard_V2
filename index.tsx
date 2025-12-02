@@ -685,7 +685,7 @@ const App = () => {
     // --- ACTION REQUIRED (STEP 2 from instructions at top of file) ---
     // PASTE YOUR NEW DEPLOYMENT URL HERE.
     // The URL you get after deploying the script from the MASTER workbook's script editor.
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxi-NhA-19HMAK90rg84VXbIHw8WcKO2OywJPgY0pkPcVhYZgL5f2mV40Sdg8o-7ltj/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxUH0LfMNvPup28E_v7i9ZMFywIgKzwRLQXaEzyY-ym226VV1SlUGTm9NpyTT4Q97eN/exec";
     
     const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbxbNrwhuhCxoTQlXwgN2XAClofwGIUe2-H2QpqMX8-KUN6-wgczXjW1NSl-NvhVOf3g/exec";
 
@@ -745,18 +745,30 @@ const App = () => {
                 await fetchWithHandling(peopleUrl, (csvText) => {
                     const parsedData = robustCsvParser(csvText);
                     const parsedPeople: Person[] = parsedData.map(fields => {
-                        let name = (fields[0] || '').trim(); // Column B for Name
-                        const email = (fields[4] || '').trim(); // Column F for Email
-                        const photoUrl = (fields[15] || '').trim(); // Column Q for Photo URL
+                        let name = (fields[0] || '').trim(); // Column B
+                        const email = (fields[4] || '').trim(); // Column F
+                        const status = (fields[6] || '').trim(); // Column H
+                        const photoUrl = (fields[15] || '').trim(); // Column Q
                         if (!name && email) {
                             const namePart = email.split('@')[0];
                             name = namePart.replace(/[._-]/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
                         }
-                        return { name, email, photoUrl };
-                    }).filter(p => p.name && p.email);
+                        return { name, email, photoUrl, status };
+                    }).filter(p => {
+                        // A person must have a name to be included in the system.
+                        if (!p.name || p.name.trim() === '') {
+                            return false;
+                        }
+                        // If status is explicitly 'Left' (case-insensitive), filter them out.
+                        if ((p.status || '').trim().toLowerCase() === 'left') {
+                            return false;
+                        }
+                        // Otherwise, keep them (this includes 'Active', empty statuses, and any other status).
+                        return true;
+                    });
                     
                     if (parsedPeople.length === 0) {
-                        setPeopleError('No valid employee data found. Please ensure the "Employee Data" sheet has columns for Name (B) and especially Email (F) populated.');
+                        setPeopleError('No active employee data found. Please ensure the "Employee Data" sheet has names in Column B and that not all employees are marked as "Left" in Column H.');
                         setPeople([]);
                     } else {
                         setPeople(parsedPeople);
