@@ -78,6 +78,7 @@ export interface Person {
     name: string;
     email?: string;
     photoUrl?: string;
+    status?: string;
 }
 
 export interface AttendanceData {
