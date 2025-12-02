@@ -1,3 +1,5 @@
+
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
 import { parseDate, calculateWorkingDaysDelay } from './utils';
@@ -115,6 +117,42 @@ const fileToBase64 = (file: File): Promise<string> => {
         };
         reader.onerror = error => reject(error);
     });
+};
+
+/**
+ * Determines if a task counts towards the performance metrics of a specific period.
+ * 
+ * THE GOLDEN RULES:
+ * 1. Current/Selected Period: Include ALL tasks planned within this period, regardless of whether they are Done, Undone, or Delayed.
+ *    - If done late (e.g. next week), they still appear here as "Delayed".
+ * 2. Backlog (History): Include ONLY tasks planned BEFORE this period that are still UNDONE.
+ *    - If a backlog task is completed (even if late), it is removed from this view.
+ */
+const isTaskRelevantForPeriod = (task: DashboardTask, periodStart: Date, periodEnd: Date): boolean => {
+    const plannedDate = parseDate(task.planned);
+    if (!plannedDate) return false;
+    
+    const pEnd = new Date(periodEnd); pEnd.setHours(0,0,0,0);
+    const pStart = new Date(periodStart); pStart.setHours(0,0,0,0);
+    const tPlan = new Date(plannedDate); tPlan.setHours(0,0,0,0);
+
+    // Rule 1: Task Planned During Period -> Always Relevant
+    if (tPlan.getTime() >= pStart.getTime() && tPlan.getTime() <= pEnd.getTime()) {
+        return true;
+    }
+
+    // Rule 2: Backlog (Planned Before Period) -> Only if Undone
+    if (tPlan.getTime() < pStart.getTime()) {
+        // Check if task is strictly UNDONE (Actual date is empty)
+        if (!task.actual || task.actual.trim() === '') {
+            return true;
+        }
+        // If it has an actual date, it is Completed (or Delayed Completed), so we hide it from backlog view.
+        return false;
+    }
+
+    // Future tasks
+    return false;
 };
 
 
@@ -905,14 +943,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const { start: prevWeekStart, end: prevWeekEnd } = getPreviousWeekRange();
         const dateRangeStr = `(${formatDateForRange(prevWeekStart)} - ${formatDateForRange(prevWeekEnd)})`;
 
-        const prevWeekTasks = userTasks.filter(task => {
-            const plannedDate = parseDate(task.planned);
-            if (!plannedDate) return false;
-            plannedDate.setHours(0, 0, 0, 0);
-            return plannedDate.getTime() >= prevWeekStart.getTime() && plannedDate.getTime() <= prevWeekEnd.getTime();
-        });
+        const prevWeekTasks = userTasks.filter(task => isTaskRelevantForPeriod(task, prevWeekStart, prevWeekEnd));
 
-        const tasksCompletedFromPrevWeek = prevWeekTasks.filter(t => !!parseDate(t.actual));
+        const tasksCompletedFromPrevWeek = prevWeekTasks.filter(t => {
+            const d = parseDate(t.actual);
+            // If it has any actual date, it is considered "Done" (so not Undone).
+            // This prevents tasks done "Next Week" from appearing in "Work NOT Done".
+            return !!d; 
+        });
+        
         const notDoneTasks = prevWeekTasks.filter(t => !tasksCompletedFromPrevWeek.includes(t));
 
         const planVsActual_Planned_Count = prevWeekTasks.length;
@@ -926,7 +965,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const actualDate = parseDate(t.actual!);
             if (!plannedDate || !actualDate) return false;
             // A task is on time if the working days delay is 0.
-            // Saturday is now a week-off.
             return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) === 0;
         });
         const onTime_Actual_Count = onTime_Actual_Tasks.length;
@@ -948,12 +986,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const { onTrackEmployees, negativeScoreEmployees } = useMemo(() => {
         const { start: prevWeekStart, end: prevWeekEnd } = getPreviousWeekRange();
         
-        const prevWeekTasks = misWeekdayTasks.filter(task => {
-            const plannedDate = parseDate(task.planned);
-            if (!plannedDate) return false;
-            plannedDate.setHours(0, 0, 0, 0);
-            return plannedDate.getTime() >= prevWeekStart.getTime() && plannedDate.getTime() <= prevWeekEnd.getTime();
-        });
+        const prevWeekTasks = misWeekdayTasks.filter(task => isTaskRelevantForPeriod(task, prevWeekStart, prevWeekEnd));
 
         const tasksByUserName = prevWeekTasks.reduce((acc, task) => {
             const name = task.userName?.trim();
@@ -970,6 +1003,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const negativeScore: Person[] = [];
 
         for (const name in tasksByUserName) {
+            const personInfo = people.find(p => p.name === name);
+            if (!personInfo) {
+                continue; // Skip employees not in the active 'people' list (i.e., they have "Left")
+            }
+
             const userTasks = tasksByUserName[name];
             if (userTasks.length === 0) continue;
 
@@ -990,8 +1028,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 return false; // Task was completed on time.
             });
             
-            const personInfo = people.find(p => p.name === name) || { name };
-
             if (isNegative) {
                 negativeScore.push(personInfo);
             } else {
@@ -1147,10 +1183,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 return false;
             }
 
-            return plannedDate.getTime() >= periodStart.getTime() && plannedDate.getTime() <= periodEnd.getTime();
+            return isTaskRelevantForPeriod(task, periodStart, periodEnd);
         });
 
-        const notDoneTasks = employeeTasksForPeriod.filter(t => !t.actual || t.actual.trim() === '');
+        // "Work NOT Done" tasks: Strictly tasks with NO actual date.
+        // If it has an actual date (even if next week), it is counted as "Done" (so removed from this list).
+        const notDoneTasks = employeeTasksForPeriod.filter(t => {
+            return (!t.actual || t.actual.trim() === '');
+        });
+
         const tasksCompleted = employeeTasksForPeriod.filter(t => !notDoneTasks.includes(t));
         const lateTasks = tasksCompleted.filter(t => {
             const plannedDate = parseDate(t.planned);
