@@ -852,14 +852,51 @@ const App = () => {
 
                 const parseDashboardTaskData = (csvText: string, source: string): DashboardTask[] => {
                     const parsedData = robustCsvParser(csvText);
-                    return parsedData
+                    const tasks: (DashboardTask | null)[] = parsedData
                         .filter(fields => fields.length > 1 && fields[1] && fields[1].trim() !== '')
-                        .map((fields, index) => ({
-                            id: `${source}-task-${fields[1] || `row-${index}`}`, timestamp: fields[0] || '', taskId: fields[1] || '', task: fields[2] || '', stepCode: fields[3] || '',
-                            planned: fields[4] || '', actual: (fields[5] || '').trim(), name: fields[6] || '', link: fields[7] || '', forPc: fields[8] || '',
-                            systemType: fields[9] || '', userName: (fields[14] || '').trim(), userEmail: (fields[15] || '').trim(),
-                            photoUrl: (fields[16] || '').trim(), attachmentUrl: (fields[17] || '').trim(),
-                        }));
+                        .map((fields, index): DashboardTask | null => {
+                            const baseId = fields[1] || `row-${index}`;
+                            if (source === 'master') {
+                                const doerName = (fields[6] || '').trim();
+                                if (!doerName) return null;
+                                return {
+                                    id: `master-task-${baseId}`,
+                                    timestamp: fields[0] || '',
+                                    taskId: fields[1] || '',
+                                    task: fields[2] || '',
+                                    stepCode: fields[3] || '',
+                                    planned: fields[4] || '',
+                                    actual: (fields[5] || '').trim(),
+                                    name: doerName,
+                                    link: fields[7] || '',
+                                    forPc: fields[8] || '',
+                                    systemType: fields[9] || '',
+                                    userName: doerName,
+                                };
+                            } else {
+                                const userName = (fields[14] || '').trim();
+                                if (!userName) return null;
+                                return {
+                                    id: `${source}-task-${baseId}`,
+                                    timestamp: fields[0] || '',
+                                    taskId: fields[1] || '',
+                                    task: fields[2] || '',
+                                    stepCode: fields[3] || '',
+                                    planned: fields[4] || '',
+                                    actual: (fields[5] || '').trim(),
+                                    name: fields[6] || '',
+                                    link: fields[7] || '',
+                                    forPc: fields[8] || '',
+                                    systemType: fields[9] || '',
+                                    userName: userName,
+                                    userEmail: (fields[15] || '').trim(),
+                                    photoUrl: (fields[16] || '').trim(),
+                                    attachmentUrl: (fields[17] || '').trim(),
+                                };
+                            }
+                        });
+
+                    return tasks.filter((t): t is DashboardTask => t !== null);
                 };
 
                 const allTasks: DashboardTask[] = [];
