@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
 import { parseDate, calculateWorkingDaysDelay } from './utils';
@@ -673,6 +671,45 @@ const TaskHistoryModal: React.FC<{
     );
 };
 
+/**
+ * A robust helper function to get the numerical "Actual" count for an "Incoming NBD" task.
+ * It handles plain numbers and the special date format from Google Sheets (e.g., '1' becomes '31/12/1899').
+ */
+const getNbdActualCount = (task: DashboardTask): number => {
+    if (task.systemType !== 'Incoming NBD') {
+        return 0;
+    }
+    const actualValue = (task.actual || '').trim();
+    if (!actualValue) {
+        return 0;
+    }
+    // Try to parse as a simple integer first. This handles cases where the cell is plain text/number.
+    const numericValue = parseInt(actualValue, 10);
+    if (!isNaN(numericValue) && String(numericValue) === actualValue) {
+        return numericValue;
+    }
+    // If that fails, it might be a date auto-formatted by the sheet.
+    const actualDate = parseDate(actualValue);
+    if (actualDate) {
+        // Google Sheets' epoch for dates starts on 1899-12-30. Day 1 is 1899-12-31.
+        const epoch = new Date(Date.UTC(1899, 11, 30)); // Month is 0-indexed, so 11 is December.
+        // We use UTC to avoid timezone issues when calculating the difference.
+        const actualDateUTC = new Date(Date.UTC(actualDate.getFullYear(), actualDate.getMonth(), actualDate.getDate()));
+        const diffTime = actualDateUTC.getTime() - epoch.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        
+        // This is a sanity check. Real dates from the current century would result in a very large number (e.g., 45000+).
+        // We assume client counts won't be that high.
+        if (diffDays > 0 && diffDays < 1000) {
+            return diffDays;
+        }
+    }
+    
+    // Fallback if parsing as a date also fails or gives an unrealistic number.
+    return 0;
+};
+
+
 // --- MAIN COMPONENT ---
 
 export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
@@ -905,8 +942,50 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [dailyAttendanceData, holidays, userEmail, userName, PRESENT_STATUSES]);
 
     const userTasks = useMemo(() => {
-        return weekdayTasks.filter(task => task.userEmail?.toLowerCase() === userEmail.toLowerCase());
-    }, [weekdayTasks, userEmail]);
+        const userEmailLower = userEmail.toLowerCase();
+        const userNameLower = userName.toLowerCase();
+        return weekdayTasks.filter(task => {
+            const taskUserEmailLower = (task.userEmail || '').toLowerCase();
+            const taskUserNameLower = (task.userName || '').toLowerCase();
+
+            if (taskUserEmailLower && taskUserEmailLower === userEmailLower) {
+                return true;
+            }
+            if (taskUserNameLower && taskUserNameLower === userNameLower) {
+                return true;
+            }
+            return false;
+        });
+    }, [weekdayTasks, userEmail, userName]);
+
+    const monthlyNbdCounts = useMemo(() => {
+        const counts = new Map<string, number>(); // Key: "userName-YYYY-MM", Value: cumulative count
+        
+        // Get all NBD tasks for the current user
+        const allNbdTasks = userTasks.filter(t => t.systemType === 'Incoming NBD');
+        
+        // Group tasks by user and month
+        const tasksByUserAndMonth = allNbdTasks.reduce((acc, task) => {
+            const plannedDate = parseDate(task.planned);
+            if (!plannedDate || !task.userName) return acc;
+            
+            const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
+            if (!acc[key]) {
+                acc[key] = [];
+            }
+            acc[key].push(task);
+            return acc;
+        }, {} as Record<string, DashboardTask[]>);
+        
+        // Calculate the sum of actuals for each group
+        for (const key in tasksByUserAndMonth) {
+            const tasksInGroup = tasksByUserAndMonth[key];
+            const totalCount = tasksInGroup.reduce((sum, task) => sum + getNbdActualCount(task), 0);
+            counts.set(key, totalCount);
+        }
+        
+        return counts;
+    }, [userTasks]);
 
     const {
         pendingTasks, overdueTasks, dueTodayTasks, prevWeekDateRange,
@@ -918,12 +997,36 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
         const pending = userTasks.filter(task => {
-            const isNotCompleted = !task.actual || task.actual.trim() === '';
-            if (!isNotCompleted) return false;
-            const plannedDate = parseDate(task.planned);
-            if (!plannedDate) return true;
-            plannedDate.setHours(0, 0, 0, 0);
-            return plannedDate.getTime() <= todayStart.getTime();
+            if (task.systemType === 'Incoming NBD') {
+                const plannedDate = parseDate(task.planned);
+                if (!plannedDate || !task.userName) {
+                     // Fallback for bad data, treat individually
+                     return getNbdActualCount(task) < 5;
+                }
+                const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
+                const monthlyTotal = monthlyNbdCounts.get(key) || 0;
+                
+                if (monthlyTotal >= 5) { return false; } // Goal met for the month, hide all NBD tasks for this month.
+                
+                // Now, check if this specific task's week is the current week to decide if it should be displayed.
+                const taskDayOfWeek = plannedDate.getDay();
+                const diffToTaskMonday = taskDayOfWeek === 0 ? 6 : taskDayOfWeek - 1;
+                const taskWeekStart = new Date(plannedDate);
+                taskWeekStart.setDate(plannedDate.getDate() - diffToTaskMonday);
+                taskWeekStart.setHours(0, 0, 0, 0);
+                const taskWeekEnd = new Date(taskWeekStart);
+                taskWeekEnd.setDate(taskWeekStart.getDate() + 6);
+                taskWeekEnd.setHours(23, 59, 59, 999);
+                return today >= taskWeekStart && today <= taskWeekEnd;
+
+            } else {
+                const isNotDone = !task.actual || task.actual.trim() === '';
+                if (!isNotDone) return false;
+                const plannedDate = parseDate(task.planned);
+                if (!plannedDate) return true;
+                plannedDate.setHours(0, 0, 0, 0);
+                return plannedDate.getTime() <= todayStart.getTime();
+            }
         });
 
         const overdue = pending.filter(task => {
@@ -945,33 +1048,44 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         const prevWeekTasks = userTasks.filter(task => isTaskRelevantForPeriod(task, prevWeekStart, prevWeekEnd));
 
-        const tasksCompletedFromPrevWeek = prevWeekTasks.filter(t => {
-            const d = parseDate(t.actual);
-            // If it has any actual date, it is considered "Done" (so not Undone).
-            // This prevents tasks done "Next Week" from appearing in "Work NOT Done".
-            return !!d; 
-        });
-        
-        const notDoneTasks = prevWeekTasks.filter(t => !tasksCompletedFromPrevWeek.includes(t));
+        // --- Performance Calculations with "Incoming NBD" logic ---
+        const prevWeekNbdTasks = prevWeekTasks.filter(t => t.systemType === 'Incoming NBD');
+        const prevWeekRegularTasks = prevWeekTasks.filter(t => t.systemType !== 'Incoming NBD');
 
-        const planVsActual_Planned_Count = prevWeekTasks.length;
-        const planVsActual_Done_Count = tasksCompletedFromPrevWeek.length;
+        // Plan vs Actual
+        const plannedForNBD = prevWeekNbdTasks.length * 5;
+        const plannedForRegular = prevWeekRegularTasks.length;
+        const planVsActual_Planned_Count = plannedForNBD + plannedForRegular;
+
+        const actualForNBD = prevWeekNbdTasks.reduce((sum, task) => sum + getNbdActualCount(task), 0);
+        const actualForRegular = prevWeekRegularTasks.filter(t => t.actual && t.actual.trim() !== '').length;
+        const planVsActual_Done_Count = actualForNBD + actualForRegular;
+
         const planVsActual_NotDone_Count = planVsActual_Planned_Count - planVsActual_Done_Count;
         const planVsActual_NotDone_Percent = planVsActual_Planned_Count > 0 ? Math.round((planVsActual_NotDone_Count / planVsActual_Planned_Count) * 100) : 0;
+        
+        // On Time (only for regular tasks)
+        const regularCompletedTasks = prevWeekRegularTasks.filter(t => t.actual && t.actual.trim() !== '');
+        const onTime_Planned_Count = regularCompletedTasks.length;
 
-        const onTime_Planned_Count = tasksCompletedFromPrevWeek.length;
-        const onTime_Actual_Tasks = tasksCompletedFromPrevWeek.filter(t => {
+        const onTime_Actual_Tasks = regularCompletedTasks.filter(t => {
             const plannedDate = parseDate(t.planned);
             const actualDate = parseDate(t.actual!);
             if (!plannedDate || !actualDate) return false;
-            // A task is on time if the working days delay is 0.
             return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) === 0;
         });
         const onTime_Actual_Count = onTime_Actual_Tasks.length;
-        const notOnTimeTasks = tasksCompletedFromPrevWeek.filter(t => !onTime_Actual_Tasks.includes(t));
-
         const onTime_NotDone_Count = onTime_Planned_Count - onTime_Actual_Count;
         const onTime_NotDone_Percent = onTime_Planned_Count > 0 ? Math.round((onTime_NotDone_Count / onTime_Planned_Count) * 100) : 0;
+        
+        // Detailed Lists for expansion
+        const notDoneTasksRegular = prevWeekRegularTasks.filter(t => !t.actual || t.actual.trim() === '');
+        const notDoneTasksNBD = prevWeekNbdTasks
+            .filter(t => getNbdActualCount(t) < 5)
+            .map(t => ({...t, task: `${t.task} (${getNbdActualCount(t)} of 5 completed)`}));
+        
+        const notDoneTasks = [...notDoneTasksRegular, ...notDoneTasksNBD];
+        const notOnTimeTasks = regularCompletedTasks.filter(t => !onTime_Actual_Tasks.includes(t));
 
         return {
             pendingTasks: pending, overdueTasks: overdue, dueTodayTasks: dueToday, prevWeekDateRange: dateRangeStr,
@@ -980,7 +1094,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             notDoneTasksForPrevWeek: notDoneTasks,
             notOnTimeTasksForPrevWeek: notOnTimeTasks,
         };
-    }, [userTasks, holidays]);
+    }, [userTasks, holidays, monthlyNbdCounts]);
     
     // --- Employee MIS Calculations ---
     const { onTrackEmployees, negativeScoreEmployees } = useMemo(() => {
@@ -1012,6 +1126,12 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (userTasks.length === 0) continue;
 
             const isNegative = userTasks.some(task => {
+                // Handle "Incoming NBD" special case
+                if (task.systemType === 'Incoming NBD') {
+                    return getNbdActualCount(task) < 5;
+                }
+                
+                // Regular task logic
                 const actualDate = parseDate(task.actual);
                 if (!actualDate) {
                     return true; // Not completed -> Negative score
@@ -1056,17 +1176,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         // --- DYNAMIC ATTENDANCE CALCULATION ---
         const attendanceBreakdown = (() => {
-            // Find all attendance records for the selected employee
             const employeeAttendanceRecords = dailyAttendanceData.filter(att => {
-                // Prioritize matching by email if available, as it's more reliable
-                if (email && att.email) {
-                    return att.email === email && att.date;
-                }
-                // Fallback to name matching if emails aren't available for some reason
+                if (email && att.email) return att.email === email && att.date;
                 return att.name.toLowerCase() === selectedNameLower && att.date;
             });
 
-            // Find the employee's very first attendance date to determine their start date
             const firstAttendanceDate = employeeAttendanceRecords
                 .map(att => parseDate(att.date))
                 .filter((d): d is Date => d !== null)
@@ -1076,7 +1190,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean)
             );
 
-            // If there are no attendance records at all for this employee
             if (!firstAttendanceDate) {
                 let wdCount = 0;
                 const d = new Date(periodStart);
@@ -1085,58 +1198,36 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     const dayOfWeek = d.getDay();
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(d.toDateString());
-                    if (!isWeekend && !isHoliday) {
-                        wdCount++;
-                    }
+                    if (!isWeekend && !isHoliday) wdCount++;
                     d.setDate(d.getDate() + 1);
                 }
-                return {
-                    workingDays: wdCount,
-                    daysPresent: 0,
-                    attendancePercentage: 0,
-                    notMarked: wdCount,
-                    otherStatusesBreakdown: [],
-                };
+                return { workingDays: wdCount, daysPresent: 0, attendancePercentage: 0, notMarked: wdCount, otherStatusesBreakdown: [] };
             }
             
             firstAttendanceDate.setHours(0, 0, 0, 0);
 
-            // Map attendance records by date string for O(1) lookup
             const attendanceMap = new Map<string, string>();
             employeeAttendanceRecords.forEach(att => {
                 const d = parseDate(att.date);
-                if (d) {
-                    attendanceMap.set(d.toDateString(), att.status);
-                }
+                if (d) attendanceMap.set(d.toDateString(), att.status);
             });
 
-            let workingDaysCount = 0;
-            let notMarkedCount = 0;
+            let workingDaysCount = 0, notMarkedCount = 0;
             const statusCounts = new Map<string, number>();
-
             const loopDate = new Date(periodStart);
             const today = new Date(); today.setHours(0, 0, 0, 0);
 
             while (loopDate <= periodEnd && loopDate <= today) {
-                // Only start counting from the employee's first recorded day
-                if (loopDate < firstAttendanceDate) {
-                    loopDate.setDate(loopDate.getDate() + 1);
-                    continue;
-                }
+                if (loopDate >= firstAttendanceDate) {
+                    const dayOfWeek = loopDate.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const isHoliday = holidayDates.has(loopDate.toDateString());
 
-                const dayOfWeek = loopDate.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                const isHoliday = holidayDates.has(loopDate.toDateString());
-
-                if (!isWeekend && !isHoliday) {
-                    workingDaysCount++;
-                    const status = attendanceMap.get(loopDate.toDateString());
-
-                    if (status) {
-                        const currentCount = statusCounts.get(status) || 0;
-                        statusCounts.set(status, currentCount + 1);
-                    } else {
-                        notMarkedCount++;
+                    if (!isWeekend && !isHoliday) {
+                        workingDaysCount++;
+                        const status = attendanceMap.get(loopDate.toDateString());
+                        if (status) statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+                        else notMarkedCount++;
                     }
                 }
                 loopDate.setDate(loopDate.getDate() + 1);
@@ -1144,88 +1235,87 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             
             let presentCount = 0;
             const otherStatusesBreakdown: [string, number][] = [];
-
             for (const [status, count] of statusCounts.entries()) {
-                if (PRESENT_STATUSES.includes(status.toLowerCase())) {
-                    presentCount += count;
-                } else {
-                    otherStatusesBreakdown.push([status, count]);
-                }
+                if (PRESENT_STATUSES.includes(status.toLowerCase())) presentCount += count;
+                else otherStatusesBreakdown.push([status, count]);
             }
             otherStatusesBreakdown.sort((a,b) => a[0].localeCompare(b[0]));
             
             const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
             
-            return {
-                workingDays: workingDaysCount,
-                daysPresent: presentCount,
-                attendancePercentage: percentage,
-                notMarked: notMarkedCount,
-                otherStatusesBreakdown: otherStatusesBreakdown,
-            };
+            return { workingDays: workingDaysCount, daysPresent: presentCount, attendancePercentage: percentage, notMarked: notMarkedCount, otherStatusesBreakdown: otherStatusesBreakdown };
         })();
 
 
-        // --- Performance calculation (dynamic based on selected period) ---
+        // --- PERFORMANCE CALCULATION (with special "Incoming NBD" logic) ---
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         const employeeTasksForPeriod = misWeekdayTasks.filter(task => {
             if (task.userName.toLowerCase() !== selectedNameLower) return false;
-            
             const plannedDate = parseDate(task.planned);
             if (!plannedDate) return false;
-            
             plannedDate.setHours(0, 0, 0, 0);
-            
-            // The planned date must be on or before today to be considered for MIS.
-            if (plannedDate.getTime() > today.getTime()) {
-                return false;
-            }
-
+            if (plannedDate.getTime() > today.getTime()) return false;
             return isTaskRelevantForPeriod(task, periodStart, periodEnd);
         });
 
-        // "Work NOT Done" tasks: Strictly tasks with NO actual date.
-        // If it has an actual date (even if next week), it is counted as "Done" (so removed from this list).
-        const notDoneTasks = employeeTasksForPeriod.filter(t => {
-            return (!t.actual || t.actual.trim() === '');
-        });
+        const nbdTasks = employeeTasksForPeriod.filter(t => t.systemType === 'Incoming NBD');
+        const regularTasks = employeeTasksForPeriod.filter(t => t.systemType !== 'Incoming NBD');
 
-        const tasksCompleted = employeeTasksForPeriod.filter(t => !notDoneTasks.includes(t));
-        const lateTasks = tasksCompleted.filter(t => {
+        // Planned
+        const plannedForNBD = nbdTasks.length * 5;
+        const plannedForRegular = regularTasks.length;
+        const totalPlanned = plannedForNBD + plannedForRegular;
+
+        // Actual
+        const actualForNBD = nbdTasks.reduce((sum, task) => sum + getNbdActualCount(task), 0);
+        const actualForRegular = regularTasks.filter(t => t.actual && t.actual.trim() !== '').length;
+        const totalActual = actualForNBD + actualForRegular;
+
+        const totalNotDoneCount = totalPlanned - totalActual;
+        const notDonePercent = totalPlanned > 0 ? Math.round((totalNotDoneCount / totalPlanned) * 100) : 0;
+
+        // On Time
+        const onTimePlanned = totalActual;
+        const regularCompletedTasks = regularTasks.filter(t => t.actual && t.actual.trim() !== '');
+        const regularLateTasks = regularCompletedTasks.filter(t => {
             const plannedDate = parseDate(t.planned);
-            const actualDate = parseDate(t.actual!);
+            const actualDate = parseDate(t.actual);
             if (!plannedDate || !actualDate) return false;
-            const delay = calculateWorkingDaysDelay(plannedDate, actualDate, holidays);
-            return delay > 0;
+            return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) > 0;
         });
+        
+        const totalLateCount = regularLateTasks.length;
+        const onTimeActual = onTimePlanned - totalLateCount;
+        const notOnTimePercent = onTimePlanned > 0 ? Math.round((totalLateCount / onTimePlanned) * 100) : 0;
 
-        const planVsActual_Planned = employeeTasksForPeriod.length;
-        const planVsActual_NotDone_Percent = planVsActual_Planned > 0 ? Math.round((notDoneTasks.length / planVsActual_Planned) * 100) : 0;
-        const onTime_Planned = tasksCompleted.length;
-        const onTime_NotDone_Percent = onTime_Planned > 0 ? Math.round((lateTasks.length / onTime_Planned) * 100) : 0;
+        // Detailed Lists
+        const regularNotDoneTasks = regularTasks.filter(t => !t.actual || t.actual.trim() === '');
+        const nbdNotDoneSyntheticTasks = nbdTasks
+            .filter(t => getNbdActualCount(t) < 5)
+            .map(t => {
+                const actualCount = getNbdActualCount(t);
+                return { ...t, task: `${t.task} (${actualCount} of 5 completed)` };
+            });
+
+        const finalNotDoneTasks = [...regularNotDoneTasks, ...nbdNotDoneSyntheticTasks];
+        const finalLateTasks = regularLateTasks;
 
         return {
             employeeDetails: { name: selectedMisEmployeeName, email: email || 'No email found', photoUrl },
-            attendance: {
-                workingDays: attendanceBreakdown.workingDays,
-                daysPresent: attendanceBreakdown.daysPresent,
-                attendancePercentage: attendanceBreakdown.attendancePercentage,
-                notMarked: attendanceBreakdown.notMarked,
-                otherStatusesBreakdown: attendanceBreakdown.otherStatusesBreakdown,
-                dateRange: dateRangeStr
-            },
+            attendance: { ...attendanceBreakdown, dateRange: dateRangeStr },
             performance: {
-                planVsActual: { planned: planVsActual_Planned, actual: planVsActual_Planned - notDoneTasks.length, percent: planVsActual_NotDone_Percent },
-                onTime: { planned: onTime_Planned, actual: onTime_Planned - lateTasks.length, percent: onTime_NotDone_Percent }
+                planVsActual: { planned: totalPlanned, actual: totalActual, percent: notDonePercent },
+                onTime: { planned: onTimePlanned, actual: onTimeActual, percent: notOnTimePercent }
             },
-            notDoneTasks, lateTasks, dateRange: dateRangeStr
+            notDoneTasks: finalNotDoneTasks,
+            lateTasks: finalLateTasks,
+            dateRange: dateRangeStr
         };
     }, [selectedMisEmployeeName, misWeekdayTasks, people, dailyAttendanceData, selectedMisPeriod, holidays, PRESENT_STATUSES]);
     
     const allEmployees = useMemo(() => {
-        // Populate the employee filter from the names present in the "On Track" and "Negative Score" lists.
         const combined = [...negativeScoreEmployees, ...onTrackEmployees];
         const names = new Set(combined.map(person => person.name.trim()).filter(Boolean));
         return Array.from(names).sort();
@@ -1269,12 +1359,9 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             return;
         }
     
-        // Optimistically update UI to prevent multiple clicks
         setInFlightTaskIds(prev => new Set(prev).add(task.id));
     
-        if (file) {
-            setIsSubmitting(true);
-        }
+        if (file) setIsSubmitting(true);
     
         try {
             const postData: {
@@ -1308,16 +1395,13 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (error instanceof Error) alert(`Error marking task as done: ${error.message}`);
             else alert(`An unknown error occurred while marking task as done.`);
             
-            // On error, revert the optimistic UI update
             setInFlightTaskIds(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(task.id);
                 return newSet;
             });
         } finally {
-            if (file) {
-                setIsSubmitting(false);
-            }
+            if (file) setIsSubmitting(false);
         }
     };
 
@@ -1433,23 +1517,18 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             { value: 'lastToLastWeek', label: 'Last to Last Week' }
         ];
     
-        // Hardcode reference date to match screenshot's context
         const referenceYear = 2025;
-        const referenceMonth = 8; // 0-indexed for September
+        const referenceMonth = 8;
     
         options.push({ value: `year-${referenceYear}`, label: `Full Year ${referenceYear}` });
     
-        // Generate 12 months backwards from the reference date
         for (let i = 0; i < 12; i++) {
             const date = new Date(referenceYear, referenceMonth - i, 1);
             const year = date.getFullYear();
 
-            // As per user request, remove any filters for years before 2025.
-            if (year < 2025) {
-                break;
-            }
+            if (year < 2025) break;
             
-            const month = date.getMonth(); // 0-indexed
+            const month = date.getMonth();
             const monthName = date.toLocaleString('default', { month: 'long' });
             
             options.push({ value: `month-${year}-${month}`, label: `${monthName} ${year}` });
@@ -1458,16 +1537,13 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         return options;
     }, []);
 
-    // --- Calendar View Logic ---
     const tasksByDate = useMemo(() => {
         const map = new Map<string, DashboardTask[]>();
         userTasks.forEach(task => {
             const plannedDate = parseDate(task.planned);
             if (plannedDate) {
                 const dateKey = `${plannedDate.getFullYear()}-${String(plannedDate.getMonth() + 1).padStart(2, '0')}-${String(plannedDate.getDate()).padStart(2, '0')}`;
-                if (!map.has(dateKey)) {
-                    map.set(dateKey, []);
-                }
+                if (!map.has(dateKey)) map.set(dateKey, []);
                 map.get(dateKey)!.push(task);
             }
         });
@@ -1475,21 +1551,16 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [userTasks]);
     
     const userAttendanceByDate = useMemo(() => {
-        const map = new Map<string, string>(); // Map<dateKey, status>
+        const map = new Map<string, string>();
         const userEmailLower = userEmail.toLowerCase();
         const userNameLower = userName.toLowerCase();
 
         dailyAttendanceData.forEach(att => {
             if (!att.date) return;
-
             const attEmailLower = (att.email || '').toLowerCase();
             let isMatch = false;
-
-            if (userEmailLower && attEmailLower) {
-                isMatch = attEmailLower === userEmailLower;
-            } else {
-                isMatch = att.name.toLowerCase() === userNameLower;
-            }
+            if (userEmailLower && attEmailLower) isMatch = attEmailLower === userEmailLower;
+            else isMatch = att.name.toLowerCase() === userNameLower;
             
             if (isMatch) {
                 const date = parseDate(att.date);
@@ -1855,13 +1926,26 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                         const isActionable = ALLOWED_SYSTEM_TYPES_FOR_SUBMIT.includes(task.systemType);
                                                         const isDisabledForSelection = isSubmitting || requiresAttachment;
                                                         const isQueued = inFlightTaskIds.has(task.id);
+                                                        
+                                                        let taskDescription = task.task;
+                                                        if (task.systemType === 'Incoming NBD') {
+                                                            const plannedDate = parseDate(task.planned);
+                                                            let nbdActualCount = 0;
+                                                            if (plannedDate && task.userName) {
+                                                                const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
+                                                                nbdActualCount = monthlyNbdCounts.get(key) || 0;
+                                                            } else {
+                                                                nbdActualCount = getNbdActualCount(task); // Fallback
+                                                            }
+                                                            taskDescription = `${task.task} (${nbdActualCount} of 5 completed)`;
+                                                        }
 
                                                         return (
                                                             <tr key={task.id}>
                                                                 <td className="checkbox-cell">
                                                                     {isActionable && (<span style={{ cursor: requiresAttachment ? 'not-allowed' : 'default' }} title={requiresAttachment ? 'Requires document upload; submit individually.' : ''}><input type="checkbox" onChange={() => handleToggleSelectOne(task.id)} checked={selectedTaskIds.has(task.id)} disabled={isDisabledForSelection || isQueued} aria-label={`Select task ${task.taskId}`} /></span>)}
                                                                 </td>
-                                                                <td>{task.taskId}</td><td>{task.systemType}</td><td>{task.task}</td><td>{task.planned.split(' ')[0]}</td><td>{task.userName || task.name}</td>
+                                                                <td>{task.taskId}</td><td>{task.systemType}</td><td>{taskDescription}</td><td>{task.planned.split(' ')[0]}</td><td>{task.userName || task.name}</td>
                                                                 <td>{isActionable && (<button className={`btn-mark-done ${isQueued ? 'btn-queued' : ''}`} onClick={() => handleMarkDoneClick(task)} disabled={isSubmitting || isQueued}>{isQueued ? 'Submitting...' : 'Mark Done'}</button>)}</td>
                                                             </tr>
                                                         );
