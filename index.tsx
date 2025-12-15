@@ -857,7 +857,7 @@ const App = () => {
                         .map((fields, index): DashboardTask | null => {
                             const baseId = fields[1] || `row-${index}`;
                             if (source === 'master') {
-                                const doerName = (fields[6] || '').trim();
+                                const doerName = (fields[14] || '').trim();
                                 if (!doerName) return null;
                                 return {
                                     id: `master-task-${baseId}`,
