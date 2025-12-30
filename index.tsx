@@ -62,7 +62,7 @@ declare var ScriptApp: any; // Added for trigger setup
 // --- START OF GOOGLE APPS SCRIPT (Code.gs) ---
 //
 var MASTER_SHEET_ID = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
-var DELEGATION_SHEET_ID = '1Znih9FtcuqTJSJtS7peoBuJ8TijOXQl9eiWrGcAmXAg';
+var DELEGATION_SHEET_ID = '18QL7gwHfWQyCCckTbwZr2eFgVnF55O8Vq9II_yQVzdU';
 var TASK_ATTACHMENTS_FOLDER_NAME = "Task Attachments"; // Define the folder name for uploads
 var QUEUE_SHEET_NAME = 'RequestQueue'; // Name for the new request queue sheet
 var BATCH_SIZE = 50; // Process up to 50 requests per run to avoid timeouts
@@ -685,9 +685,9 @@ const App = () => {
     // --- ACTION REQUIRED (STEP 2 from instructions at top of file) ---
     // PASTE YOUR NEW DEPLOYMENT URL HERE.
     // The URL you get after deploying the script from the MASTER workbook's script editor.
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxUH0LfMNvPup28E_v7i9ZMFywIgKzwRLQXaEzyY-ym226VV1SlUGTm9NpyTT4Q97eN/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwYN0BY-mpKiAmmj8zXF97dhukWH-m-q2fX6DTdfGVB6nHJIwBwhZ29ySaz1rNBr_Qv/exec";
     
-    const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbxbNrwhuhCxoTQlXwgN2XAClofwGIUe2-H2QpqMX8-KUN6-wgczXjW1NSl-NvhVOf3g/exec";
+    const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbzTtcv7en0te98MUU8DeK_rPGrEW-xs2aH3EQCt4FqX2vIf-WPg9uFYtmG1WGY_8SlW/exec";
 
     // Enforce view for non-admin roles
     useEffect(() => {
@@ -715,7 +715,7 @@ const App = () => {
 
 
         const sheetId = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
-        const delegationSheetId = '1Znih9FtcuqTJSJtS7peoBuJ8TijOXQl9eiWrGcAmXAg';
+        const delegationSheetId = '18QL7gwHfWQyCCckTbwZr2eFgVnF55O8Vq9II_yQVzdU';
         const masterDashboardSheetId = '1tlHs1iKCEnhrNAZRMy8YiTMeLGtyd5QWJ09okevio_M';
 
         // URLs for fetching data
