@@ -725,7 +725,7 @@ const App = () => {
     // The URL you get after deploying the script from the MASTER workbook's script editor.
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwYN0BY-mpKiAmmj8zXF97dhukWH-m-q2fX6DTdfGVB6nHJIwBwhZ29ySaz1rNBr_Qv/exec";
     
-    const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbxbNrwhuhCxoTQlXwgN2XAClofwGIUe2-H2QpqMX8-KUN6-wgczXjW1NSl-NvhVOf3g/exec";
+    const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbzTtcv7en0te98MUU8DeK_rPGrEW-xs2aH3EQCt4FqX2vIf-WPg9uFYtmG1WGY_8SlW/exec";
 
     // Enforce view for non-admin roles
     useEffect(() => {
