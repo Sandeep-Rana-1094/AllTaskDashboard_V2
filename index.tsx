@@ -4,7 +4,7 @@ import { ChecklistSystem } from './ChecklistSystem.tsx';
 import { DelegationSystem } from './DelegationSystem.tsx';
 import { TaskDashboardSystem } from './TaskDashboardSystem.tsx';
 import { 
-    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday
+    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole
 } from './types';
 import { useLocalStorage, robustCsvParser } from './utils';
 
@@ -541,26 +541,63 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
         const sheetId = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
         const usersSheetName = 'Users';
         
-        const usersUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${usersSheetName}`;
+        const usersUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${usersSheetName}&range=A:C`;
+        const teamMapUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${usersSheetName}&tq=${encodeURIComponent('SELECT E, F WHERE E IS NOT NULL')}`;
 
         try {
-            const usersResponse = await fetch(usersUrl);
-            if (!usersResponse.ok) throw new Error('Failed to fetch user data. The "Users" sheet might be private or may not exist.');
+            // Fetch both user roles and manager mappings concurrently
+            const [usersResponse, teamMapResponse] = await Promise.all([
+                fetch(usersUrl),
+                fetch(teamMapUrl)
+            ]);
 
-            // Parse Users sheet
+            if (!usersResponse.ok) throw new Error('Failed to fetch user data. The "Users" sheet might be private or may not exist.');
+            if (!teamMapResponse.ok) throw new Error('Failed to fetch team mapping data from the "Users" sheet.');
+
             const usersCsvText = await usersResponse.text();
-            const userRows = usersCsvText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').slice(1);
+            const teamMapCsvText = await teamMapResponse.text();
+            
             const csvSplitter = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+
+            // Parse Users for authentication (Admin/User)
+            const userRows = usersCsvText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').slice(1);
             const users: UserAuth[] = userRows.map(row => {
                  const fields = row.split(csvSplitter);
                  const [mailId, role, password] = fields.map(field => field.trim().replace(/^"|"$/g, ''));
                  return { mailId, role, password };
-            }).filter(u => u.mailId); // Ensure mailId is not empty
-            
+            }).filter(u => u.mailId);
+
+            // Parse Manager-Team mapping
+            const teamMapRows = teamMapCsvText.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').slice(1);
+            const teamMap = new Map<string, string[]>();
+            teamMapRows.forEach(row => {
+                const fields = row.split(csvSplitter);
+                const managerEmail = (fields[0] || '').trim().replace(/^"|"$/g, '').toLowerCase();
+                const teamMemberEmail = (fields[1] || '').trim().replace(/^"|"$/g, '').toLowerCase();
+                if (managerEmail && teamMemberEmail) {
+                    if (!teamMap.has(managerEmail)) {
+                        teamMap.set(managerEmail, []);
+                    }
+                    teamMap.get(managerEmail)!.push(teamMemberEmail);
+                }
+            });
+
             const lowerCaseEmail = email.toLowerCase();
+            
+            // --- LOGIN LOGIC: Manager > Admin > User ---
 
+            // 1. Check if the user is a Manager
+            if (teamMap.has(lowerCaseEmail)) {
+                onLoginSuccess({
+                    mailId: email,
+                    role: 'Manager',
+                    teamEmails: teamMap.get(lowerCaseEmail) || []
+                });
+                return;
+            }
+
+            // 2. Check if the user is in the auth list (Admin or User)
             const foundUserInUsersSheet = users.find(u => u.mailId.toLowerCase() === lowerCaseEmail);
-
             if (foundUserInUsersSheet) {
                 if (foundUserInUsersSheet.role === 'Admin') {
                     // Admin found, ask for password
@@ -568,10 +605,10 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
                     setStep('password');
                 } else {
                     // Any other role in Users sheet is logged in without password
-                    onLoginSuccess({ mailId: foundUserInUsersSheet.mailId, role: foundUserInUsersSheet.role });
+                    onLoginSuccess({ mailId: foundUserInUsersSheet.mailId, role: (foundUserInUsersSheet.role as UserRole) || 'User' });
                 }
             } else {
-                // Not found in the Users sheet, treat as a normal user.
+                // 3. Not found anywhere, treat as a new standard user.
                 onLoginSuccess({ mailId: email, role: 'User' });
             }
         } catch (err: any) {
@@ -585,7 +622,7 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
         if (!adminUser) return;
         
         if (adminUser.password === password) {
-            onLoginSuccess({ mailId: adminUser.mailId, role: adminUser.role });
+            onLoginSuccess({ mailId: adminUser.mailId, role: 'Admin' });
         } else {
             setError('Incorrect password.');
         }
@@ -651,6 +688,7 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
 const App = () => {
     const [authenticatedUser, setAuthenticatedUser] = useLocalStorage<AuthenticatedUser | null>('task-delegator-auth', null);
     const isAdmin = authenticatedUser?.role === 'Admin';
+    const isManager = authenticatedUser?.role === 'Manager';
 
     const [mode, setMode] = useState<AppMode>('dashboard');
     
@@ -687,7 +725,7 @@ const App = () => {
     // The URL you get after deploying the script from the MASTER workbook's script editor.
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwYN0BY-mpKiAmmj8zXF97dhukWH-m-q2fX6DTdfGVB6nHJIwBwhZ29ySaz1rNBr_Qv/exec";
     
-    const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbzTtcv7en0te98MUU8DeK_rPGrEW-xs2aH3EQCt4FqX2vIf-WPg9uFYtmG1WGY_8SlW/exec";
+    const DELEGATION_FORM_URL = "https://script.google.com/macros/s/AKfycbxbNrwhuhCxoTQlXwgN2XAClofwGIUe2-H2QpqMX8-KUN6-wgczXjW1NSl-NvhVOf3g/exec";
 
     // Enforce view for non-admin roles
     useEffect(() => {
@@ -857,7 +895,11 @@ const App = () => {
                         .map((fields, index): DashboardTask | null => {
                             const baseId = fields[1] || `row-${index}`;
                             if (source === 'master') {
-                                const doerName = (fields[14] || '').trim();
+                                // Updated mapping based on user request:
+                                // Name -> Column O (Index 14)
+                                // Actual -> Column F (Index 5)
+                                // Link -> Column H (Index 7)
+                                const doerName = (fields[14] || '').trim(); 
                                 if (!doerName) return null;
                                 return {
                                     id: `master-task-${baseId}`,
@@ -866,9 +908,9 @@ const App = () => {
                                     task: fields[2] || '',
                                     stepCode: fields[3] || '',
                                     planned: fields[4] || '',
-                                    actual: (fields[5] || '').trim(),
+                                    actual: (fields[5] || '').trim(), 
                                     name: doerName,
-                                    link: fields[7] || '',
+                                    link: fields[7] || '', 
                                     forPc: fields[8] || '',
                                     systemType: fields[9] || '',
                                     userName: doerName,
