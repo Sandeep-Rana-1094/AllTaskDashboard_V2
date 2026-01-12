@@ -1517,8 +1517,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             { value: 'lastToLastWeek', label: 'Last to Last Week' }
         ];
     
-        const referenceYear = 2025;
-        const referenceMonth = 8;
+        const referenceYear = 2026;
+        const referenceMonth = 11; // December 2026 (0-indexed)
     
         options.push({ value: `year-${referenceYear}`, label: `Full Year ${referenceYear}` });
     
@@ -1526,7 +1526,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const date = new Date(referenceYear, referenceMonth - i, 1);
             const year = date.getFullYear();
 
-            if (year < 2025) break;
+            // Stop if we go before 2026
+            if (year < 2026) break;
             
             const month = date.getMonth();
             const monthName = date.toLocaleString('default', { month: 'long' });
