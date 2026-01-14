@@ -731,6 +731,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [dashboardMode, setDashboardMode] = useState<'myDashboard' | 'employeeMIS'>('myDashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'overdue' | 'today'>('all');
+    // Fix: Initialize selectedTaskIds using useState with a new Set<string>
     const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [attachmentModalTask, setAttachmentModalTask] = useState<DashboardTask | null>(null);
@@ -1430,7 +1431,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 attachment: { fileName: file.name, mimeType: file.type, content: base64String }
             };
             await postToGoogleSheet(postData);
-            setInFlightTaskIds(prev => new Set(prev).add(task.id));
+            setInFlightTaskIds(prev => new Set([...prev, ...submittedIds]));
             setAttachmentModalTask(null);
         } catch (error) {
             console.error("Failed to mark task as re-done with attachment:", error);
@@ -1467,7 +1468,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     };
 
     const handleToggleSelectAll = () => {
-        if (selectedTaskIds.size === selectableTasks.length) setSelectedTaskIds(new Set());
+        if (selectableTasks.length > 0 && selectedTaskIds.size === selectableTasks.length) setSelectedTaskIds(new Set());
         else setSelectedTaskIds(new Set(selectableTasks.map(t => t.id)));
     };
 
@@ -1585,6 +1586,16 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     <div className="dashboard-tabs">
                         <button onClick={() => setDashboardMode('myDashboard')} className={dashboardMode === 'myDashboard' ? 'active' : ''}>My Dashboard</button>
                         {isAdmin && <button onClick={() => setDashboardMode('employeeMIS')} className={dashboardMode === 'employeeMIS' ? 'active' : ''}>Employee MIS</button>}
+                        {/* New button for All Users Dashboard */}
+                        {isAdmin && (
+                            <button 
+                                onClick={() => window.open('https://all-users-all-data.vercel.app/', '_blank', 'noopener,noreferrer')} 
+                                className="all-users-dashboard-btn"
+                                aria-label="Open All Users Dashboard"
+                            >
+                                All Users Dashboard
+                            </button>
+                        )}
                     </div>
                 </div>
                 <div className="dashboard-header-right">
