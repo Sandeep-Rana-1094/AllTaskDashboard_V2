@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo } from 'react';
 import { AuthenticatedUser, DelegationTask, Person } from './types';
 import { getIsoDate, parseDate } from './utils';
@@ -258,9 +257,6 @@ export const DelegationSystem: React.FC<DelegationSystemProps> = ({
     }, [people]);
 
     const filteredDelegationTasks = useMemo(() => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         return delegationTasks.filter(task => {
             const searchTerm = delegationFilters.task.toLowerCase();
             const taskMatch = delegationFilters.task === '' ||
@@ -289,8 +285,6 @@ export const DelegationSystem: React.FC<DelegationSystemProps> = ({
             })();
             if (!statusMatch) return false;
 
-            const taskPlannedDate = parseDate(task.plannedDate);
-
             if (delegationFilters.plannedDate) {
                 try {
                     const filterDate = parseDate(delegationFilters.plannedDate);
@@ -299,6 +293,7 @@ export const DelegationSystem: React.FC<DelegationSystemProps> = ({
                     }
                     filterDate.setHours(0, 0, 0, 0);
 
+                    const taskPlannedDate = parseDate(task.plannedDate);
                     if (!taskPlannedDate) return false;
                     
                     taskPlannedDate.setHours(0, 0, 0, 0);
@@ -308,13 +303,8 @@ export const DelegationSystem: React.FC<DelegationSystemProps> = ({
                     return false;
                 }
             } else {
-                if (taskPlannedDate) {
-                    taskPlannedDate.setHours(0, 0, 0, 0);
-                    const isDone = task.actualDate && task.actualDate.trim() !== '';
-                    if (taskPlannedDate.getTime() > today.getTime() && !isDone) {
-                        return false;
-                    }
-                }
+                // If no specific plannedDate filter is active, show ALL tasks from the sheet.
+                // This removes the previous logic that hid future-dated tasks.
                 return true;
             }
         });
