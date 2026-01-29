@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
 import { parseDate, calculateWorkingDaysDelay } from './utils';
@@ -671,6 +672,38 @@ const TaskHistoryModal: React.FC<{
     );
 };
 
+const AttendanceDetailModal: React.FC<{
+    data: { title: string; dates: Date[] } | null;
+    onClose: () => void;
+}> = ({ data, onClose }) => {
+    if (!data) return null;
+
+    const formattedDates = data.dates
+        .sort((a, b) => a.getTime() - b.getTime())
+        .map(d => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                <div className="delegation-modal-header">
+                    <h2 id="attendance-detail-title">{data.title} ({formattedDates.length})</h2>
+                    <button onClick={onClose} className="btn-close-modal" aria-label="Close modal">&times;</button>
+                </div>
+                <div className="history-modal-body" style={{ maxHeight: '60vh' }}>
+                    {formattedDates.length > 0 ? (
+                        <ul style={{ listStyleType: 'disc', paddingLeft: '20px', margin: 0 }}>
+                            {formattedDates.map((dateStr, index) => <li key={index} style={{ padding: '4px 0' }}>{dateStr}</li>)}
+                        </ul>
+                    ) : (
+                        <p className="no-history-message" style={{ padding: '20px 0' }}>No dates found for this category.</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 /**
  * A robust helper function to get the numerical "Actual" count for an "Incoming NBD" task.
  * It handles plain numbers and the special date format from Google Sheets (e.g., '1' becomes '31/12/1899').
@@ -745,6 +778,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [calendarMode, setCalendarMode] = useState<'month' | 'week'>('week');
     const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
     const [historyModalTask, setHistoryModalTask] = useState<DashboardTask | null>(null);
+    const [attendanceModalData, setAttendanceModalData] = useState<{ title: string; dates: Date[] } | null>(null);
+
 
     // --- Employee MIS State ---
     const [selectedMisEmployeeName, setSelectedMisEmployeeName] = useState<string | null>(null);
@@ -838,7 +873,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     // --- My Dashboard Calculations ---
     const myAttendanceBreakdown = useMemo(() => {
         const { start: periodStart, end: periodEnd } = getPreviousWeekRange();
-
         const userEmailLower = userEmail.toLowerCase();
         const userNameLower = userName.toLowerCase();
 
@@ -850,69 +884,64 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             return att.name.toLowerCase() === userNameLower && att.date;
         });
 
-        const firstAttendanceDate = userAttendanceRecords
-            .map(att => parseDate(att.date))
-            .filter((d): d is Date => d !== null)
-            .sort((a, b) => a.getTime() - b.getTime())[0];
-
-        const holidayDates = new Set(
-            holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean)
-        );
-
+        const firstAttendanceDate = userAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0];
+        const holidayDates = new Set(holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean));
         const today = new Date(); today.setHours(0, 0, 0, 0);
 
+        const workingDaysDates: Date[] = [];
+        const notMarkedDates: Date[] = [];
+        const statusDatesMap = new Map<string, Date[]>();
+        let workingDaysCount = 0;
+
         if (!firstAttendanceDate) {
-            let wdCount = 0;
             const d = new Date(periodStart);
             while (d <= periodEnd && d <= today) {
                 const dayOfWeek = d.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday is 0, Saturday is 6
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const isHoliday = holidayDates.has(d.toDateString());
                 if (!isWeekend && !isHoliday) {
-                    wdCount++;
+                    workingDaysCount++;
+                    workingDaysDates.push(new Date(d));
+                    notMarkedDates.push(new Date(d));
                 }
                 d.setDate(d.getDate() + 1);
             }
             return {
-                workingDays: wdCount,
+                workingDays: workingDaysCount,
                 daysPresent: 0,
                 attendancePercentage: 0,
-                notMarked: wdCount,
+                notMarked: workingDaysCount,
                 otherStatusesBreakdown: [],
+                workingDaysDates,
+                presentDates: [],
+                notMarkedDates
             };
         }
         
         firstAttendanceDate.setHours(0, 0, 0, 0);
-
         const attendanceMap = new Map<string, string>();
         userAttendanceRecords.forEach(att => {
             const d = parseDate(att.date);
-            if (d) {
-                attendanceMap.set(d.toDateString(), att.status);
-            }
+            if (d) attendanceMap.set(d.toDateString(), att.status);
         });
 
-        let workingDaysCount = 0;
-        let notMarkedCount = 0;
-        const statusCounts = new Map<string, number>();
-
         const loopDate = new Date(periodStart);
-
         while (loopDate <= periodEnd && loopDate <= today) {
             if (loopDate >= firstAttendanceDate) {
                 const dayOfWeek = loopDate.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Sunday is 0, Saturday is 6
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const isHoliday = holidayDates.has(loopDate.toDateString());
 
                 if (!isWeekend && !isHoliday) {
                     workingDaysCount++;
+                    workingDaysDates.push(new Date(loopDate));
                     const status = attendanceMap.get(loopDate.toDateString());
 
                     if (status) {
-                        const currentCount = statusCounts.get(status) || 0;
-                        statusCounts.set(status, currentCount + 1);
+                        if (!statusDatesMap.has(status)) statusDatesMap.set(status, []);
+                        statusDatesMap.get(status)!.push(new Date(loopDate));
                     } else {
-                        notMarkedCount++;
+                        notMarkedDates.push(new Date(loopDate));
                     }
                 }
             }
@@ -920,16 +949,18 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         }
         
         let presentCount = 0;
-        const otherStatusesBreakdown: [string, number][] = [];
+        const presentDates: Date[] = [];
+        const otherStatusesBreakdown: { status: string; count: number; dates: Date[] }[] = [];
 
-        for (const [status, count] of statusCounts.entries()) {
+        for (const [status, dates] of statusDatesMap.entries()) {
             if (PRESENT_STATUSES.includes(status.toLowerCase())) {
-                presentCount += count;
+                presentCount += dates.length;
+                presentDates.push(...dates);
             } else {
-                otherStatusesBreakdown.push([status, count]);
+                otherStatusesBreakdown.push({ status, count: dates.length, dates });
             }
         }
-        otherStatusesBreakdown.sort((a, b) => a[0].localeCompare(b[0]));
+        otherStatusesBreakdown.sort((a, b) => a.status.localeCompare(b.status));
         
         const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
         
@@ -937,8 +968,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             workingDays: workingDaysCount,
             daysPresent: presentCount,
             attendancePercentage: percentage,
-            notMarked: notMarkedCount,
-            otherStatusesBreakdown: otherStatusesBreakdown,
+            notMarked: notMarkedDates.length,
+            otherStatusesBreakdown,
+            workingDaysDates,
+            presentDates,
+            notMarkedDates,
         };
     }, [dailyAttendanceData, holidays, userEmail, userName, PRESENT_STATUSES]);
 
@@ -1178,73 +1212,90 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         // --- DYNAMIC ATTENDANCE CALCULATION ---
         const attendanceBreakdown = (() => {
             const employeeAttendanceRecords = dailyAttendanceData.filter(att => {
-                if (email && att.email) return att.email === email && att.date;
+                if (email && att.email) return att.email.toLowerCase() === email && att.date;
                 return att.name.toLowerCase() === selectedNameLower && att.date;
             });
-
-            const firstAttendanceDate = employeeAttendanceRecords
-                .map(att => parseDate(att.date))
-                .filter((d): d is Date => d !== null)
-                .sort((a, b) => a.getTime() - b.getTime())[0]; 
-
-            const holidayDates = new Set(
-                holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean)
-            );
-
+    
+            const firstAttendanceDate = employeeAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0]; 
+            const holidayDates = new Set(holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean));
+    
+            const workingDaysDates: Date[] = [];
+            const notMarkedDates: Date[] = [];
+            const statusDatesMap = new Map<string, Date[]>();
+            let workingDaysCount = 0;
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+    
             if (!firstAttendanceDate) {
-                let wdCount = 0;
                 const d = new Date(periodStart);
-                const today = new Date(); today.setHours(0, 0, 0, 0);
                 while (d <= periodEnd && d <= today) {
                     const dayOfWeek = d.getDay();
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(d.toDateString());
-                    if (!isWeekend && !isHoliday) wdCount++;
+                    if (!isWeekend && !isHoliday) {
+                        workingDaysCount++;
+                        workingDaysDates.push(new Date(d));
+                        notMarkedDates.push(new Date(d));
+                    }
                     d.setDate(d.getDate() + 1);
                 }
-                return { workingDays: wdCount, daysPresent: 0, attendancePercentage: 0, notMarked: wdCount, otherStatusesBreakdown: [] };
+                return { workingDays: workingDaysCount, daysPresent: 0, attendancePercentage: 0, notMarked: workingDaysCount, otherStatusesBreakdown: [], workingDaysDates, presentDates: [], notMarkedDates };
             }
             
             firstAttendanceDate.setHours(0, 0, 0, 0);
-
             const attendanceMap = new Map<string, string>();
             employeeAttendanceRecords.forEach(att => {
                 const d = parseDate(att.date);
                 if (d) attendanceMap.set(d.toDateString(), att.status);
             });
-
-            let workingDaysCount = 0, notMarkedCount = 0;
-            const statusCounts = new Map<string, number>();
+    
             const loopDate = new Date(periodStart);
-            const today = new Date(); today.setHours(0, 0, 0, 0);
-
             while (loopDate <= periodEnd && loopDate <= today) {
                 if (loopDate >= firstAttendanceDate) {
                     const dayOfWeek = loopDate.getDay();
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(loopDate.toDateString());
-
+    
                     if (!isWeekend && !isHoliday) {
                         workingDaysCount++;
+                        workingDaysDates.push(new Date(loopDate));
                         const status = attendanceMap.get(loopDate.toDateString());
-                        if (status) statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
-                        else notMarkedCount++;
+                        if (status) {
+                            if (!statusDatesMap.has(status)) statusDatesMap.set(status, []);
+                            statusDatesMap.get(status)!.push(new Date(loopDate));
+                        } else {
+                            notMarkedDates.push(new Date(loopDate));
+                        }
                     }
                 }
                 loopDate.setDate(loopDate.getDate() + 1);
             }
             
             let presentCount = 0;
-            const otherStatusesBreakdown: [string, number][] = [];
-            for (const [status, count] of statusCounts.entries()) {
-                if (PRESENT_STATUSES.includes(status.toLowerCase())) presentCount += count;
-                else otherStatusesBreakdown.push([status, count]);
+            const presentDates: Date[] = [];
+            const otherStatusesBreakdown: { status: string; count: number; dates: Date[] }[] = [];
+    
+            for (const [status, dates] of statusDatesMap.entries()) {
+                if (PRESENT_STATUSES.includes(status.toLowerCase())) {
+                    presentCount += dates.length;
+                    presentDates.push(...dates);
+                } else {
+                    otherStatusesBreakdown.push({ status, count: dates.length, dates });
+                }
             }
-            otherStatusesBreakdown.sort((a,b) => a[0].localeCompare(b[0]));
+            otherStatusesBreakdown.sort((a,b) => a.status.localeCompare(b.status));
             
             const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
             
-            return { workingDays: workingDaysCount, daysPresent: presentCount, attendancePercentage: percentage, notMarked: notMarkedCount, otherStatusesBreakdown: otherStatusesBreakdown };
+            return {
+                workingDays: workingDaysCount,
+                daysPresent: presentCount,
+                attendancePercentage: percentage,
+                notMarked: notMarkedDates.length,
+                otherStatusesBreakdown,
+                workingDaysDates,
+                presentDates,
+                notMarkedDates
+            };
         })();
 
 
@@ -1411,6 +1462,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             alert("Cannot mark task as re-done: Missing Task ID.");
             return;
         }
+
+        // Add task to in-flight IDs before the request to provide immediate UI feedback.
+        setInFlightTaskIds(prev => new Set(prev).add(task.id));
+
         setIsSubmitting(true);
         try {
             const base64String = await fileToBase64(file);
@@ -1431,12 +1486,19 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 attachment: { fileName: file.name, mimeType: file.type, content: base64String }
             };
             await postToGoogleSheet(postData);
-            setInFlightTaskIds(prev => new Set([...prev, ...submittedIds]));
+            // 'submittedIds' was undefined. The cleanup is now handled by the useEffect watching dashboardTasks.
             setAttachmentModalTask(null);
         } catch (error) {
             console.error("Failed to mark task as re-done with attachment:", error);
             if (error instanceof Error) alert(`Error marking task as re-done: ${error.message}`);
             else alert(`An unknown error occurred while marking task as re-done.`);
+
+            // Remove from in-flight on error.
+            setInFlightTaskIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(task.id);
+                return newSet;
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -1522,6 +1584,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const referenceMonth = 11; // December 2026 (0-indexed)
     
         options.push({ value: `year-${referenceYear}`, label: `Full Year ${referenceYear}` });
+        options.push({ value: 'year-2025', label: 'Full Year 2025' });
     
         for (let i = 0; i < 12; i++) {
             const date = new Date(referenceYear, referenceMonth - i, 1);
@@ -1672,22 +1735,22 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                         <div className="attendance-progress">
                                             <CircularProgress percentage={misReportData.attendance.attendancePercentage} color="#22c55e" />
                                             <div className="attendance-details-list">
-                                                <div className="detail-item">
+                                                 <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}>
                                                     <span>Working Days</span>
                                                     <span className="detail-value">{misReportData.attendance.workingDays}</span>
                                                 </div>
-                                                <div className="detail-item">
+                                                <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Present Days', dates: misReportData.attendance.presentDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Present Days', dates: misReportData.attendance.presentDates })}>
                                                     <span>Present</span>
                                                     <span className="detail-value">{misReportData.attendance.daysPresent}</span>
                                                 </div>
-                                                {misReportData.attendance.otherStatusesBreakdown.map(([status, count]) => (
-                                                    <div className="detail-item" key={status}>
+                                                {misReportData.attendance.otherStatusesBreakdown.map(({ status, count, dates }) => (
+                                                    <div className="detail-item" key={status} role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: `${status} Dates`, dates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: `${status} Dates`, dates })}>
                                                         <span>{status}</span>
                                                         <span className="detail-value">{count}</span>
                                                     </div>
                                                 ))}
                                                 {misReportData.attendance.notMarked > 0 && (
-                                                    <div className="detail-item">
+                                                    <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}>
                                                         <span>Not Marked</span>
                                                         <span className="detail-value">{misReportData.attendance.notMarked}</span>
                                                     </div>
@@ -1805,198 +1868,199 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     )}
                 </div>
             ) : (
-                <>
-                    <div className="dashboard-main">
-                        <aside className="dashboard-sidebar">
-                            <div className="dashboard-card user-profile-card">
-                                <div className="dashboard-avatar">
-                                    {photoUrl ? <img src={photoUrl} alt={`${userName}'s profile`} referrerPolicy="no-referrer" /> : <UserIcon />}
-                                </div>
-                                <h3 className="user-name">{userName}</h3>
-                                <p className="user-email">{userEmail}</p>
+                <div className="dashboard-main">
+                    <aside className="dashboard-sidebar">
+                        <div className="dashboard-card user-profile-card">
+                            <div className="dashboard-avatar">
+                                {photoUrl ? <img src={photoUrl} alt={`${userName}'s profile`} referrerPolicy="no-referrer" /> : <UserIcon />}
                             </div>
-                            <div className="dashboard-card attendance-card">
-                                <h3>My Weekly Attendance <span className="date-range">{prevWeekDateRange}</span></h3>
-                                <div className="attendance-progress">
-                                    <CircularProgress percentage={myAttendanceBreakdown.attendancePercentage} color="#22c55e" />
-                                     <div className="attendance-details-list">
-                                        <div className="detail-item">
-                                            <span>Working Days</span>
-                                            <span className="detail-value">{myAttendanceBreakdown.workingDays}</span>
-                                        </div>
-                                        <div className="detail-item">
-                                            <span>Present</span>
-                                            <span className="detail-value">{myAttendanceBreakdown.daysPresent}</span>
-                                        </div>
-                                        {myAttendanceBreakdown.otherStatusesBreakdown.map(([status, count]) => (
-                                            <div className="detail-item" key={status}>
-                                                <span>{status}</span>
-                                                <span className="detail-value">{count}</span>
-                                            </div>
-                                        ))}
-                                        {myAttendanceBreakdown.notMarked > 0 && (
-                                            <div className="detail-item">
-                                                <span>Not Marked</span>
-                                                <span className="detail-value">{myAttendanceBreakdown.notMarked}</span>
-                                            </div>
-                                        )}
+                            <h3 className="user-name">{userName}</h3>
+                            <p className="user-email">{userEmail}</p>
+                        </div>
+                        <div className="dashboard-card attendance-card">
+                            <h3>My Weekly Attendance <span className="date-range">{prevWeekDateRange}</span></h3>
+                            <div className="attendance-progress">
+                                <CircularProgress percentage={myAttendanceBreakdown.attendancePercentage} color="#22c55e" />
+                                    <div className="attendance-details-list">
+                                    <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Working Days', dates: myAttendanceBreakdown.workingDaysDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Working Days', dates: myAttendanceBreakdown.workingDaysDates })}>
+                                        <span>Working Days</span>
+                                        <span className="detail-value">{myAttendanceBreakdown.workingDays}</span>
                                     </div>
-                                </div>
-                            </div>
-                        </aside>
-
-                        <main className="dashboard-content">
-                             <div className="dashboard-view-switcher">
-                                <button onClick={() => setCurrentView('stats')} className={currentView === 'stats' ? 'active' : ''}>Status View</button>
-                                <button onClick={() => setCurrentView('calendar')} className={currentView === 'calendar' ? 'active' : ''}>Calendar View</button>
-                            </div>
-                            {currentView === 'stats' ? (
-                                <>
-                                    <div className="dashboard-card performance-card">
-                                        <h3>My Weekly Performance <span className="date-range">{prevWeekDateRange}</span></h3>
-                                        <table className="performance-table">
-                                            <thead><tr><th>KRA</th><th>KPI</th><th>PLANNED</th><th>ACTUAL</th><th>ACTUAL %</th><th></th></tr></thead>
-                                            <tbody>
-                                                <tr onClick={() => setExpandedKpi(prev => prev === 'notDone' ? null : 'notDone')} className={expandedKpi === 'notDone' ? 'active-kpi' : ''} style={{cursor: 'pointer'}}>
-                                                    <td>All work should be done as per plan</td><td>% work NOT done</td>
-                                                    <td className="numeric">{planVsActual_Planned}</td><td className="numeric">{planVsActual_Actual}</td>
-                                                    <td className="numeric actual-percent" style={{ color: planVsActual_Percent > 10 ? '#ef4444' : '#22c55e' }}>{planVsActual_Percent}%</td>
-                                                    <td><ArrowIcon className={expandedKpi === 'notDone' ? 'expanded' : ''} /></td>
-                                                </tr>
-                                                <tr onClick={() => setExpandedKpi(prev => prev === 'notOnTime' ? null : 'notOnTime')} className={expandedKpi === 'notOnTime' ? 'active-kpi' : ''} style={{cursor: 'pointer'}}>
-                                                    <td>All work should be done on time</td><td>% work NOT done on time</td>
-                                                    <td className="numeric">{onTime_Planned}</td><td className="numeric">{onTime_Actual}</td>
-                                                    <td className="numeric actual-percent" style={{ color: onTime_Percent > 10 ? '#ef4444' : '#22c55e' }}>{onTime_Percent}%</td>
-                                                    <td><ArrowIcon className={expandedKpi === 'notOnTime' ? 'expanded' : ''} /></td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+                                    <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Present Days', dates: myAttendanceBreakdown.presentDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Present Days', dates: myAttendanceBreakdown.presentDates })}>
+                                        <span>Present</span>
+                                        <span className="detail-value">{myAttendanceBreakdown.daysPresent}</span>
                                     </div>
-                                    {expandedKpi && (
-                                        <div className="dashboard-card pending-tasks-card">
-                                            <div className="card-header">
-                                                <h3>
-                                                    {expandedKpi === 'notDone' 
-                                                        ? `Work NOT Done (${notDoneTasksForPrevWeek.length} Tasks)`
-                                                        : `Work NOT Done on Time (${notOnTimeTasksForPrevWeek.length} Tasks)`
-                                                    }
-                                                </h3>
-                                            </div>
-                                            <div className="table-container" style={{maxHeight: '400px'}}>
-                                                <table className="pending-tasks-table kpi-details-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>TASK ID</th>
-                                                            <th>SYSTEM TYPE</th>
-                                                            <th>STEP CODE</th>
-                                                            <th>TASK</th>
-                                                            <th>PLANNED</th>
-                                                            <th>ACTUAL</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {(expandedKpi === 'notDone' ? notDoneTasksForPrevWeek : notOnTimeTasksForPrevWeek).map(task => (
-                                                            <tr key={task.id}>
-                                                                <td>{task.taskId}</td>
-                                                                <td>{task.systemType}</td>
-                                                                <td>{task.stepCode}</td>
-                                                                <td>{task.task}</td>
-                                                                <td>{task.planned.split(' ')[0]}</td>
-                                                                <td>{task.actual ? task.actual.split(' ')[0] : '-'}</td>
-                                                            </tr>
-                                                        ))}
-                                                        {(expandedKpi === 'notDone' ? notDoneTasksForPrevWeek.length === 0 : notOnTimeTasksForPrevWeek.length === 0) && (
-                                                            <tr><td colSpan={6} style={{textAlign: 'center', padding: '32px'}}>No tasks to display for this category.</td></tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
-                                            </div>
+                                    {myAttendanceBreakdown.otherStatusesBreakdown.map(({ status, count, dates }) => (
+                                        <div className="detail-item" key={status} role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: `${status} Dates`, dates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: `${status} Dates`, dates })}>
+                                            <span>{status}</span>
+                                            <span className="detail-value">{count}</span>
+                                        </div>
+                                    ))}
+                                    {myAttendanceBreakdown.notMarked > 0 && (
+                                        <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Not Marked Dates', dates: myAttendanceBreakdown.notMarkedDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Not Marked Dates', dates: myAttendanceBreakdown.notMarkedDates })}>
+                                            <span>Not Marked</span>
+                                            <span className="detail-value">{myAttendanceBreakdown.notMarked}</span>
                                         </div>
                                     )}
-                                    <div className="stats-grid">
-                                        <StatCard title="My Pending Tasks" value={pendingTasks.length} icon={<PendingIcon />} className={`stat-card--pending stat-card-clickable ${filterMode === 'all' ? 'active' : ''}`} onClick={() => setFilterMode('all')} ariaPressed={filterMode === 'all'} />
-                                        <StatCard title="Overdue Tasks" value={overdueTasks.length} icon={<OverdueIcon />} className={`stat-card--overdue stat-card-clickable ${filterMode === 'overdue' ? 'active' : ''}`} onClick={() => setFilterMode('overdue')} ariaPressed={filterMode === 'overdue'} />
-                                        <StatCard title="Tasks Due Today" value={dueTodayTasks.length} icon={<TodayIcon />} className={`stat-card--today stat-card-clickable ${filterMode === 'today' ? 'active' : ''}`} onClick={() => setFilterMode('today')} ariaPressed={filterMode === 'today'} />
-                                    </div>
-                                    <div className="dashboard-card search-card">
-                                        <h3>Search Tasks</h3>
-                                        <div className="search-input-wrapper">
-                                            <SearchIcon /><input type="text" placeholder="Search by ID, task, system, doer..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                                        </div>
-                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <main className="dashboard-content">
+                            <div className="dashboard-view-switcher">
+                            <button onClick={() => setCurrentView('stats')} className={currentView === 'stats' ? 'active' : ''}>Status View</button>
+                            <button onClick={() => setCurrentView('calendar')} className={currentView === 'calendar' ? 'active' : ''}>Calendar View</button>
+                        </div>
+                        {currentView === 'stats' ? (
+                            <>
+                                <div className="dashboard-card performance-card">
+                                    <h3>My Weekly Performance <span className="date-range">{prevWeekDateRange}</span></h3>
+                                    <table className="performance-table">
+                                        <thead><tr><th>KRA</th><th>KPI</th><th>PLANNED</th><th>ACTUAL</th><th>ACTUAL %</th><th></th></tr></thead>
+                                        <tbody>
+                                            <tr onClick={() => setExpandedKpi(prev => prev === 'notDone' ? null : 'notDone')} className={expandedKpi === 'notDone' ? 'active-kpi' : ''} style={{cursor: 'pointer'}}>
+                                                <td>All work should be done as per plan</td><td>% work NOT done</td>
+                                                <td className="numeric">{planVsActual_Planned}</td><td className="numeric">{planVsActual_Actual}</td>
+                                                <td className="numeric actual-percent" style={{ color: planVsActual_Percent > 10 ? '#ef4444' : '#22c55e' }}>{planVsActual_Percent}%</td>
+                                                <td><ArrowIcon className={expandedKpi === 'notDone' ? 'expanded' : ''} /></td>
+                                            </tr>
+                                            <tr onClick={() => setExpandedKpi(prev => prev === 'notOnTime' ? null : 'notOnTime')} className={expandedKpi === 'notOnTime' ? 'active-kpi' : ''} style={{cursor: 'pointer'}}>
+                                                <td>All work should be done on time</td><td>% work NOT done on time</td>
+                                                <td className="numeric">{onTime_Planned}</td><td className="numeric">{onTime_Actual}</td>
+                                                <td className="numeric actual-percent" style={{ color: onTime_Percent > 10 ? '#ef4444' : '#22c55e' }}>{onTime_Percent}%</td>
+                                                <td><ArrowIcon className={expandedKpi === 'notOnTime' ? 'expanded' : ''} /></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {expandedKpi && (
                                     <div className="dashboard-card pending-tasks-card">
                                         <div className="card-header">
-                                            <h3>{tableTitle} ({filteredPendingTasks.length})</h3>
-                                            {selectedTaskIds.size > 0 && (<button className="btn btn-primary btn-submit-selected" onClick={handleMarkMultipleDone} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : `Submit Selected (${selectedTaskIds.size})`}</button>)}
+                                            <h3>
+                                                {expandedKpi === 'notDone' 
+                                                    ? `Work NOT Done (${notDoneTasksForPrevWeek.length} Tasks)`
+                                                    : `Work NOT Done on Time (${notOnTimeTasksForPrevWeek.length} Tasks)`
+                                                }
+                                            </h3>
                                         </div>
                                         <div className="table-container" style={{maxHeight: '400px'}}>
-                                            <table className="pending-tasks-table">
-                                                <thead><tr><th className="checkbox-cell"><input type="checkbox" onChange={handleToggleSelectAll} checked={isAllSelected} disabled={selectableTasks.length === 0 || isSubmitting} aria-label="Select all tasks" /></th><th>Task ID</th><th>System Type</th><th>TASK</th><th>Planned</th><th>DOER NAME</th><th></th></tr></thead>
+                                            <table className="pending-tasks-table kpi-details-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>TASK ID</th>
+                                                        <th>SYSTEM TYPE</th>
+                                                        <th>STEP CODE</th>
+                                                        <th>TASK</th>
+                                                        <th>PLANNED</th>
+                                                        <th>ACTUAL</th>
+                                                    </tr>
+                                                </thead>
                                                 <tbody>
-                                                    {filteredPendingTasks.length > 0 ? filteredPendingTasks.map(task => {
-                                                        const requiresAttachment = task.attachmentUrl && task.attachmentUrl.trim() !== '';
-                                                        const isActionable = ALLOWED_SYSTEM_TYPES_FOR_SUBMIT.includes(task.systemType);
-                                                        const isDisabledForSelection = isSubmitting || requiresAttachment;
-                                                        const isQueued = inFlightTaskIds.has(task.id);
-                                                        
-                                                        let taskDescription = task.task;
-                                                        if (task.systemType === 'Incoming NBD') {
-                                                            const plannedDate = parseDate(task.planned);
-                                                            let nbdActualCount = 0;
-                                                            if (plannedDate && task.userName) {
-                                                                const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
-                                                                nbdActualCount = monthlyNbdCounts.get(key) || 0;
-                                                            } else {
-                                                                nbdActualCount = getNbdActualCount(task); // Fallback
-                                                            }
-                                                            taskDescription = `${task.task} (${nbdActualCount} of 5 completed)`;
-                                                        }
-
-                                                        return (
-                                                            <tr key={task.id}>
-                                                                <td className="checkbox-cell">
-                                                                    {isActionable && (<span style={{ cursor: requiresAttachment ? 'not-allowed' : 'default' }} title={requiresAttachment ? 'Requires document upload; submit individually.' : ''}><input type="checkbox" onChange={() => handleToggleSelectOne(task.id)} checked={selectedTaskIds.has(task.id)} disabled={isDisabledForSelection || isQueued} aria-label={`Select task ${task.taskId}`} /></span>)}
-                                                                </td>
-                                                                <td>{task.taskId}</td><td>{task.systemType}</td><td>{taskDescription}</td><td>{task.planned.split(' ')[0]}</td><td>{task.userName || task.name}</td>
-                                                                <td>{isActionable && (<button className={`btn-mark-done ${isQueued ? 'btn-queued' : ''}`} onClick={() => handleMarkDoneClick(task)} disabled={isSubmitting || isQueued}>{isQueued ? 'Submitting...' : 'Mark Done'}</button>)}</td>
-                                                            </tr>
-                                                        );
-                                                    }) : (<tr><td colSpan={7} style={{textAlign: 'center', padding: '32px'}}>No tasks found.</td></tr>)}
+                                                    {(expandedKpi === 'notDone' ? notDoneTasksForPrevWeek : notOnTimeTasksForPrevWeek).map(task => (
+                                                        <tr key={task.id}>
+                                                            <td>{task.taskId}</td>
+                                                            <td>{task.systemType}</td>
+                                                            <td>{task.stepCode}</td>
+                                                            <td>{task.task}</td>
+                                                            <td>{task.planned.split(' ')[0]}</td>
+                                                            <td>{task.actual ? task.actual.split(' ')[0] : '-'}</td>
+                                                        </tr>
+                                                    ))}
+                                                    {(expandedKpi === 'notDone' ? notDoneTasksForPrevWeek.length === 0 : notOnTimeTasksForPrevWeek.length === 0) && (
+                                                        <tr><td colSpan={6} style={{textAlign: 'center', padding: '32px'}}>No tasks to display for this category.</td></tr>
+                                                    )}
                                                 </tbody>
                                             </table>
                                         </div>
                                     </div>
-                                </>
-                            ) : (
-                                <CalendarView
-                                    isAdmin={isAdmin}
-                                    calendarDate={calendarDate}
-                                    setCalendarDate={setCalendarDate}
-                                    calendarMode={calendarMode}
-                                    setCalendarMode={setCalendarMode}
-                                    tasksByDate={tasksByDate}
-                                    setSelectedCalendarDate={setSelectedCalendarDate}
-                                    userAttendanceByDate={userAttendanceByDate}
-                                    holidays={holidays}
-                                />
-                            )}
-                        </main>
-                    </div>
-                    <AttachmentModal task={attachmentModalTask} onClose={() => setAttachmentModalTask(null)} onSubmit={handleModalSubmit} isSubmitting={isSubmitting} />
-                    <SelectedDateModal
-                        date={selectedCalendarDate}
-                        tasks={selectedCalendarDate ? tasksByDate.get(`${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`) || [] : []}
-                        onClose={() => setSelectedCalendarDate(null)}
-                    />
-                    {historyModalTask && (
-                        <TaskHistoryModal
-                            task={historyModalTask}
-                            history={taskHistory}
-                            onClose={() => setHistoryModalTask(null)}
-                        />
-                    )}
-                </>
+                                )}
+                                <div className="stats-grid">
+                                    <StatCard title="My Pending Tasks" value={pendingTasks.length} icon={<PendingIcon />} className={`stat-card--pending stat-card-clickable ${filterMode === 'all' ? 'active' : ''}`} onClick={() => setFilterMode('all')} ariaPressed={filterMode === 'all'} />
+                                    <StatCard title="Overdue Tasks" value={overdueTasks.length} icon={<OverdueIcon />} className={`stat-card--overdue stat-card-clickable ${filterMode === 'overdue' ? 'active' : ''}`} onClick={() => setFilterMode('overdue')} ariaPressed={filterMode === 'overdue'} />
+                                    <StatCard title="Tasks Due Today" value={dueTodayTasks.length} icon={<TodayIcon />} className={`stat-card--today stat-card-clickable ${filterMode === 'today' ? 'active' : ''}`} onClick={() => setFilterMode('today')} ariaPressed={filterMode === 'today'} />
+                                </div>
+                                <div className="dashboard-card search-card">
+                                    <h3>Search Tasks</h3>
+                                    <div className="search-input-wrapper">
+                                        <SearchIcon /><input type="text" placeholder="Search by ID, task, system, doer..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                                    </div>
+                                </div>
+                                <div className="dashboard-card pending-tasks-card">
+                                    <div className="card-header">
+                                        <h3>{tableTitle} ({filteredPendingTasks.length})</h3>
+                                        {selectedTaskIds.size > 0 && (<button className="btn btn-primary btn-submit-selected" onClick={handleMarkMultipleDone} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : `Submit Selected (${selectedTaskIds.size})`}</button>)}
+                                    </div>
+                                    <div className="table-container" style={{maxHeight: '400px'}}>
+                                        <table className="pending-tasks-table">
+                                            <thead><tr><th className="checkbox-cell"><input type="checkbox" onChange={handleToggleSelectAll} checked={isAllSelected} disabled={selectableTasks.length === 0 || isSubmitting} aria-label="Select all tasks" /></th><th>Task ID</th><th>System Type</th><th>TASK</th><th>Planned</th><th>DOER NAME</th><th></th></tr></thead>
+                                            <tbody>
+                                                {filteredPendingTasks.length > 0 ? filteredPendingTasks.map(task => {
+                                                    const requiresAttachment = task.attachmentUrl && task.attachmentUrl.trim() !== '';
+                                                    const isActionable = ALLOWED_SYSTEM_TYPES_FOR_SUBMIT.includes(task.systemType);
+                                                    const isDisabledForSelection = isSubmitting || requiresAttachment;
+                                                    const isQueued = inFlightTaskIds.has(task.id);
+                                                    
+                                                    let taskDescription = task.task;
+                                                    if (task.systemType === 'Incoming NBD') {
+                                                        const plannedDate = parseDate(task.planned);
+                                                        let nbdActualCount = 0;
+                                                        if (plannedDate && task.userName) {
+                                                            const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
+                                                            nbdActualCount = monthlyNbdCounts.get(key) || 0;
+                                                        } else {
+                                                            nbdActualCount = getNbdActualCount(task); // Fallback
+                                                        }
+                                                        taskDescription = `${task.task} (${nbdActualCount} of 5 completed)`;
+                                                    }
+
+                                                    return (
+                                                        <tr key={task.id}>
+                                                            <td className="checkbox-cell">
+                                                                {isActionable && (<span style={{ cursor: requiresAttachment ? 'not-allowed' : 'default' }} title={requiresAttachment ? 'Requires document upload; submit individually.' : ''}><input type="checkbox" onChange={() => handleToggleSelectOne(task.id)} checked={selectedTaskIds.has(task.id)} disabled={isDisabledForSelection || isQueued} aria-label={`Select task ${task.taskId}`} /></span>)}
+                                                            </td>
+                                                            <td>{task.taskId}</td><td>{task.systemType}</td><td>{taskDescription}</td><td>{task.planned.split(' ')[0]}</td><td>{task.userName || task.name}</td>
+                                                            <td>{isActionable && (<button className={`btn-mark-done ${isQueued ? 'btn-queued' : ''}`} onClick={() => handleMarkDoneClick(task)} disabled={isSubmitting || isQueued}>{isQueued ? 'Submitting...' : 'Mark Done'}</button>)}</td>
+                                                        </tr>
+                                                    );
+                                                }) : (<tr><td colSpan={7} style={{textAlign: 'center', padding: '32px'}}>No tasks found.</td></tr>)}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <CalendarView
+                                isAdmin={isAdmin}
+                                calendarDate={calendarDate}
+                                setCalendarDate={setCalendarDate}
+                                calendarMode={calendarMode}
+                                setCalendarMode={setCalendarMode}
+                                tasksByDate={tasksByDate}
+                                setSelectedCalendarDate={setSelectedCalendarDate}
+                                userAttendanceByDate={userAttendanceByDate}
+                                holidays={holidays}
+                            />
+                        )}
+                    </main>
+                </div>
             )}
+            
+            {/* SHARED MODALS - Available in all modes */}
+            <AttachmentModal task={attachmentModalTask} onClose={() => setAttachmentModalTask(null)} onSubmit={handleModalSubmit} isSubmitting={isSubmitting} />
+            <SelectedDateModal
+                date={selectedCalendarDate}
+                tasks={selectedCalendarDate ? tasksByDate.get(`${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`) || [] : []}
+                onClose={() => setSelectedCalendarDate(null)}
+            />
+            {historyModalTask && (
+                <TaskHistoryModal
+                    task={historyModalTask}
+                    history={taskHistory}
+                    onClose={() => setHistoryModalTask(null)}
+                />
+            )}
+            <AttendanceDetailModal data={attendanceModalData} onClose={() => setAttendanceModalData(null)} />
         </div>
     );
 };
