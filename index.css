@@ -1205,6 +1205,30 @@ textarea {
     border-bottom: 1px solid #f3f4f6;
 }
 
+@keyframes pulse-bg-kpi {
+  0% { background-color: transparent; }
+  50% { background-color: rgba(99, 102, 241, 0.1); }
+  100% { background-color: transparent; }
+}
+
+.detail-item[role="button"] {
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    margin: 0 -8px;
+    padding: 8px;
+    border-radius: var(--border-radius-sm);
+    animation: pulse-bg-kpi 3s infinite ease-in-out;
+    border: 1px solid transparent;
+}
+.detail-item[role="button"]:hover {
+    background-color: var(--info-bg);
+    animation: none;
+    transform: scale(1.02);
+    border-color: var(--info-color);
+    box-shadow: var(--shadow-sm);
+}
+
+
 .detail-item:last-child {
     border-bottom: none;
 }
