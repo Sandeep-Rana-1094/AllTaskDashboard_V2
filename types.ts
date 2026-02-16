@@ -63,6 +63,8 @@ export interface DashboardTask {
   userEmail?: string;
   userName?: string;
   attachmentUrl?: string;
+  daysGiven?: string;
+  workDoneDay?: string;
 }
 
 // Fix: Define UserRole type exported for use in index.tsx
