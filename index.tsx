@@ -914,6 +914,8 @@ const App = () => {
                                     forPc: fields[8] || '',
                                     systemType: fields[9] || '',
                                     userName: doerName,
+                                    daysGiven: fields[19] || '',
+                                    workDoneDay: fields[20] || '',
                                 };
                             } else {
                                 const userName = (fields[14] || '').trim();
@@ -934,6 +936,8 @@ const App = () => {
                                     userEmail: (fields[15] || '').trim(),
                                     photoUrl: (fields[16] || '').trim(),
                                     attachmentUrl: (fields[17] || '').trim(),
+                                    daysGiven: fields[19] || '',
+                                    workDoneDay: fields[20] || '',
                                 };
                             }
                         });
