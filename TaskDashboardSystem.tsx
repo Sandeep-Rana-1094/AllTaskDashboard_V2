@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
 import { parseDate, calculateWorkingDaysDelay, calculateWorkingDaysPassed } from './utils';
@@ -1124,48 +1123,34 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const notDoneTasks = [...notDoneTasksRegular, ...notDoneTasksNBD];
         const notOnTimeTasks = regularCompletedTasks.filter(t => !onTime_Actual_Tasks.includes(t));
 
-        // --- NEW KPI CALCULATION FOR DELAYED DAYS ---
-        const delayedOrOverdueTasks = prevWeekTasks.filter(task => {
+        // --- KPI CALCULATION FOR DELAYED DAYS (Only Done & Delayed Tasks) ---
+        const doneAndDelayedTasks = prevWeekTasks.filter(task => {
+            const actualDate = parseDate(task.actual);
+            if (!actualDate) return false; // Must be Done
+
             const plannedDate = parseDate(task.planned);
             if (!plannedDate) return false;
-            plannedDate.setHours(0, 0, 0, 0);
-
-            const isOverdue = (!task.actual || task.actual.trim() === '') && plannedDate.getTime() < todayStart.getTime();
-
-            if (isOverdue) return true;
-
-            const actualDate = parseDate(task.actual);
-            if (actualDate) {
-                actualDate.setHours(0,0,0,0);
-                return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) > 0;
-            }
-
-            return false;
+            
+            // Must be Delayed
+            return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) > 0;
         });
 
-        const totalDaysGiven = delayedOrOverdueTasks.reduce((sum, task) => {
+        const totalDaysGiven = doneAndDelayedTasks.reduce((sum, task) => {
             const days = parseInt(task.daysGiven || '0', 10);
             return sum + (isNaN(days) ? 0 : days);
         }, 0);
 
-        const totalWorkDoneDays = delayedOrOverdueTasks.reduce((sum, task) => {
+        const totalWorkDoneDays = doneAndDelayedTasks.reduce((sum, task) => {
             if (task.workDoneDay) {
                 const days = parseInt(task.workDoneDay, 10);
                 return sum + (isNaN(days) ? 0 : days);
             }
-            
-            const plannedDate = parseDate(task.planned);
-            if (plannedDate) {
-                const daysGiven = parseInt(task.daysGiven || '0', 10);
-                const daysPassed = calculateWorkingDaysPassed(plannedDate, todayStart, holidays);
-                return sum + daysPassed + (isNaN(daysGiven) ? 0 : daysGiven);
-            }
-
             return sum;
         }, 0);
 
-        const dayDelayPercent = totalWorkDoneDays > 0 
-            ? Math.round(Math.abs((totalDaysGiven / totalWorkDoneDays) * 100 - 100))
+        const delayInDays = totalWorkDoneDays - totalDaysGiven;
+        const dayDelayPercent = totalDaysGiven > 0 
+            ? Math.round(((totalWorkDoneDays - totalDaysGiven) / totalDaysGiven) * 100)
             : 0;
 
 
@@ -1392,44 +1377,33 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const onTimeActual = onTimePlanned - totalLateCount;
         const notOnTimePercent = onTimePlanned > 0 ? Math.round((totalLateCount / onTimePlanned) * 100) : 0;
 
-        // --- NEW KPI CALCULATION FOR DELAYED DAYS (MIS) ---
-        const delayedOrOverdueTasks = employeeTasksForPeriod.filter(task => {
+        // --- KPI CALCULATION FOR DELAYED DAYS (MIS - Only Done & Delayed Tasks) ---
+        const doneAndDelayedTasks = employeeTasksForPeriod.filter(task => {
+            const actualDate = parseDate(task.actual);
+            if (!actualDate) return false; // Must be Done
+
             const plannedDate = parseDate(task.planned);
             if (!plannedDate) return false;
-            plannedDate.setHours(0, 0, 0, 0);
 
-            const isOverdue = (!task.actual || task.actual.trim() === '') && plannedDate.getTime() < today.getTime();
-            if (isOverdue) return true;
-
-            const actualDate = parseDate(task.actual);
-            if (actualDate) {
-                actualDate.setHours(0,0,0,0);
-                return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) > 0;
-            }
-            return false;
+            // Must be Delayed
+            return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) > 0;
         });
 
-        const totalDaysGiven = delayedOrOverdueTasks.reduce((sum, task) => {
+        const totalDaysGiven = doneAndDelayedTasks.reduce((sum, task) => {
             const days = parseInt(task.daysGiven || '0', 10);
             return sum + (isNaN(days) ? 0 : days);
         }, 0);
 
-        const totalWorkDoneDays = delayedOrOverdueTasks.reduce((sum, task) => {
+        const totalWorkDoneDays = doneAndDelayedTasks.reduce((sum, task) => {
             if (task.workDoneDay) {
                 const days = parseInt(task.workDoneDay, 10);
                 return sum + (isNaN(days) ? 0 : days);
             }
-            const plannedDate = parseDate(task.planned);
-            if (plannedDate) {
-                const daysGiven = parseInt(task.daysGiven || '0', 10);
-                const daysPassed = calculateWorkingDaysPassed(plannedDate, today, holidays);
-                return sum + daysPassed + (isNaN(daysGiven) ? 0 : daysGiven);
-            }
             return sum;
         }, 0);
-
-        const dayDelayPercent = totalWorkDoneDays > 0 
-            ? Math.round(Math.abs((totalDaysGiven / totalWorkDoneDays) * 100 - 100))
+        
+        const dayDelayPercent = totalDaysGiven > 0 
+            ? Math.round(((totalWorkDoneDays - totalDaysGiven) / totalDaysGiven) * 100)
             : 0;
 
         // Detailed Lists
@@ -1893,24 +1867,21 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                             <th>TASK</th>
                                                             <th>PLANNED</th>
                                                             <th style={{ textAlign: 'center' }}>DAYS GIVEN</th>
-                                                            <th className="delay-days">DAYS TAKEN</th>
+                                                            <th className="delay-days">DELAY DAYS</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        {misReportData.notDoneTasks.map(task => {
-                                                            const totalDelay = task.workDoneDay ? parseInt(task.workDoneDay, 10) : 0;
-                                                            return (
-                                                                <tr key={task.id} className="clickable-row" onClick={() => setHistoryModalTask(task)}>
-                                                                    <td>{task.taskId}</td>
-                                                                    <td>{task.systemType}</td>
-                                                                    <td>{task.stepCode}</td>
-                                                                    <td>{task.task}</td>
-                                                                    <td>{task.planned.split(' ')[0]}</td>
-                                                                    <td style={{ textAlign: 'center', fontWeight: '700' }}>{task.daysGiven || ''}</td>
-                                                                    <td className="delay-days">{!isNaN(totalDelay) && totalDelay > 0 ? totalDelay : ''}</td>
-                                                                </tr>
-                                                            );
-                                                        })}
+                                                        {misReportData.notDoneTasks.map(task => (
+                                                            <tr key={task.id} className="clickable-row" onClick={() => setHistoryModalTask(task)}>
+                                                                <td>{task.taskId}</td>
+                                                                <td>{task.systemType}</td>
+                                                                <td>{task.stepCode}</td>
+                                                                <td>{task.task}</td>
+                                                                <td>{task.planned.split(' ')[0]}</td>
+                                                                <td style={{ textAlign: 'center', fontWeight: '700' }}>{task.daysGiven || ''}</td>
+                                                                <td className="delay-days">{task.workDoneDay || ''}</td>
+                                                            </tr>
+                                                        ))}
                                                     </tbody>
                                                 </table>
                                             ) : (
