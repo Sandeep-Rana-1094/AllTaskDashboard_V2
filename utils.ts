@@ -1,3 +1,5 @@
+
+
 import React, { useState } from 'react';
 import { Task, Holiday } from './types';
 
@@ -286,5 +288,31 @@ export const calculateWorkingDaysDelay = (plannedDate: Date, actualDate: Date, h
         return 1;
     }
 
+    return workingDays;
+};
+
+// Calculates total working days between two dates, INCLUSIVE of both start and end.
+export const calculateWorkingDaysPassed = (startDate: Date, endDate: Date, holidays: Holiday[], options?: { isSaturdayWorkday?: boolean }): number => {
+    // This function is inclusive of start and end date
+    const pDate = new Date(startDate);
+    pDate.setHours(0, 0, 0, 0);
+    const aDate = new Date(endDate);
+    aDate.setHours(0, 0, 0, 0);
+
+    if (aDate.getTime() < pDate.getTime()) return 0;
+
+    const holidayDateStrings = new Set(holidays.map(h => { const d = parseDate(h.date); return d ? d.toDateString() : ''; }).filter(Boolean));
+    let workingDays = 0;
+    const currentDate = new Date(pDate);
+
+    while (currentDate.getTime() <= aDate.getTime()) {
+        const dayOfWeek = currentDate.getDay();
+        const isWeekend = options?.isSaturdayWorkday ? dayOfWeek === 0 : dayOfWeek === 0 || dayOfWeek === 6;
+        const isHoliday = holidayDateStrings.has(currentDate.toDateString());
+        if (!isWeekend && !isHoliday) {
+            workingDays++;
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
     return workingDays;
 };
