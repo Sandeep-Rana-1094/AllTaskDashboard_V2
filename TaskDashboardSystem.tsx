@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
 import { parseDate, calculateWorkingDaysDelay, calculateWorkingDaysPassed } from './utils';
@@ -784,6 +785,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     // --- Employee MIS State ---
     const [selectedMisEmployeeName, setSelectedMisEmployeeName] = useState<string | null>(null);
     const [selectedMisPeriod, setSelectedMisPeriod] = useState<string>('lastWeek');
+    const [misSubView, setMisSubView] = useState<'mis' | 'employee'>('mis');
+    const [misEmployeeCurrentView, setMisEmployeeCurrentView] = useState<'stats' | 'calendar'>('stats');
     const reportRef = useRef<HTMLDivElement>(null);
 
     // Statuses that count as being present for work
@@ -791,12 +794,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
     useEffect(() => {
         if (selectedMisEmployeeName) {
+            setMisSubView('mis'); // Reset to MIS view when employee changes
+            setMisEmployeeCurrentView('stats'); // Reset calendar/stats view as well
             const timer = setTimeout(() => {
                 reportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 100);
             return () => clearTimeout(timer);
         }
     }, [selectedMisEmployeeName]);
+
 
     // Filter out tasks planned on Sundays from all calculations for "My Dashboard".
     const weekdayTasks = useMemo(() => {
@@ -1431,7 +1437,153 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             dateRange: dateRangeStr
         };
     }, [selectedMisEmployeeName, misWeekdayTasks, people, dailyAttendanceData, selectedMisPeriod, holidays, PRESENT_STATUSES]);
-    
+
+     // --- New Calculations for Admin's "Employee View" ---
+    const misEmployeeViewData = useMemo(() => {
+        if (!selectedMisEmployeeName) return null;
+
+        // --- Details ---
+        const selectedNameLower = selectedMisEmployeeName.toLowerCase();
+        const personInfo = people.find(p => p.name.toLowerCase() === selectedNameLower);
+        const taskInfo = misWeekdayTasks.find(t => t.userName.toLowerCase() === selectedNameLower);
+        const email = (personInfo?.email || taskInfo?.userEmail || '').toLowerCase();
+        const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl || taskInfo?.photoUrl);
+        const employeeDetails = { name: selectedMisEmployeeName, email, photoUrl };
+
+        // --- Attendance ---
+        const { start: periodStart, end: periodEnd } = getPreviousWeekRange();
+        const attendanceBreakdown = (() => {
+            const userAttendanceRecords = dailyAttendanceData.filter(att => {
+                if (email && att.email) return att.email.toLowerCase() === email && att.date;
+                return att.name.toLowerCase() === selectedNameLower && att.date;
+            });
+            const firstAttendanceDate = userAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0];
+            const holidayDates = new Set(holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean));
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const workingDaysDates: Date[] = []; const notMarkedDates: Date[] = [];
+            const statusDatesMap = new Map<string, Date[]>(); let workingDaysCount = 0;
+            if (!firstAttendanceDate) {
+                const d = new Date(periodStart);
+                while (d <= periodEnd && d <= today) {
+                    const dayOfWeek = d.getDay(); const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const isHoliday = holidayDates.has(d.toDateString());
+                    if (!isWeekend && !isHoliday) { workingDaysCount++; workingDaysDates.push(new Date(d)); notMarkedDates.push(new Date(d)); }
+                    d.setDate(d.getDate() + 1);
+                }
+                return { workingDays: workingDaysCount, daysPresent: 0, attendancePercentage: 0, notMarked: workingDaysCount, otherStatusesBreakdown: [], workingDaysDates, presentDates: [], notMarkedDates };
+            }
+            firstAttendanceDate.setHours(0, 0, 0, 0); const attendanceMap = new Map<string, string>();
+            userAttendanceRecords.forEach(att => { const d = parseDate(att.date); if (d) attendanceMap.set(d.toDateString(), att.status); });
+            const loopDate = new Date(periodStart);
+            while (loopDate <= periodEnd && loopDate <= today) {
+                if (loopDate >= firstAttendanceDate) {
+                    const dayOfWeek = loopDate.getDay(); const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const isHoliday = holidayDates.has(loopDate.toDateString());
+                    if (!isWeekend && !isHoliday) {
+                        workingDaysCount++; workingDaysDates.push(new Date(loopDate)); const status = attendanceMap.get(loopDate.toDateString());
+                        if (status) { if (!statusDatesMap.has(status)) statusDatesMap.set(status, []); statusDatesMap.get(status)!.push(new Date(loopDate));
+                        } else { notMarkedDates.push(new Date(loopDate)); }
+                    }
+                }
+                loopDate.setDate(loopDate.getDate() + 1);
+            }
+            let presentCount = 0; const presentDates: Date[] = [];
+            const otherStatusesBreakdown: { status: string; count: number; dates: Date[] }[] = [];
+            for (const [status, dates] of statusDatesMap.entries()) {
+                if (PRESENT_STATUSES.includes(status.toLowerCase())) { presentCount += dates.length; presentDates.push(...dates);
+                } else { otherStatusesBreakdown.push({ status, count: dates.length, dates }); }
+            }
+            otherStatusesBreakdown.sort((a,b) => a.status.localeCompare(b.status));
+            const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
+            return { workingDays: workingDaysCount, daysPresent: presentCount, attendancePercentage: percentage, notMarked: notMarkedDates.length, otherStatusesBreakdown, workingDaysDates, presentDates, notMarkedDates };
+        })();
+
+
+        // --- Tasks & KPIs ---
+        const employeeTasks = misWeekdayTasks.filter(task => (task.userName || '').toLowerCase() === selectedNameLower);
+        
+        const employeeMonthlyNbdCounts = (() => {
+            const counts = new Map<string, number>(); const allNbdTasks = employeeTasks.filter(t => t.systemType === 'Incoming NBD');
+            const tasksByUserAndMonth = allNbdTasks.reduce((acc, task) => {
+                const plannedDate = parseDate(task.planned); if (!plannedDate || !task.userName) return acc;
+                const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
+                if (!acc[key]) acc[key] = []; acc[key].push(task); return acc;
+            }, {} as Record<string, DashboardTask[]>);
+            for (const key in tasksByUserAndMonth) {
+                const tasksInGroup = tasksByUserAndMonth[key];
+                const totalCount = tasksInGroup.reduce((sum, task) => sum + getNbdActualCount(task), 0);
+                counts.set(key, totalCount);
+            }
+            return counts;
+        })();
+
+        const kpiData = (() => {
+            const today = new Date(); const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const pending = employeeTasks.filter(task => {
+                if (task.systemType === 'Incoming NBD') {
+                    const plannedDate = parseDate(task.planned); if (!plannedDate || !task.userName) return getNbdActualCount(task) < 5;
+                    const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`; const monthlyTotal = employeeMonthlyNbdCounts.get(key) || 0;
+                    if (monthlyTotal >= 5) return false;
+                    const taskDayOfWeek = plannedDate.getDay(); const diffToTaskMonday = taskDayOfWeek === 0 ? 6 : taskDayOfWeek - 1;
+                    const taskWeekStart = new Date(plannedDate); taskWeekStart.setDate(plannedDate.getDate() - diffToTaskMonday); taskWeekStart.setHours(0, 0, 0, 0);
+                    const taskWeekEnd = new Date(taskWeekStart); taskWeekEnd.setDate(taskWeekStart.getDate() + 6); taskWeekEnd.setHours(23, 59, 59, 999);
+                    return today >= taskWeekStart && today <= taskWeekEnd;
+                } else {
+                    const isNotDone = !task.actual || task.actual.trim() === ''; if (!isNotDone) return false;
+                    const plannedDate = parseDate(task.planned); if (!plannedDate) return true;
+                    plannedDate.setHours(0, 0, 0, 0); return plannedDate.getTime() <= todayStart.getTime();
+                }
+            });
+            const overdue = pending.filter(task => { const plannedDate = parseDate(task.planned); if (!plannedDate) return false; plannedDate.setHours(0, 0, 0, 0); return plannedDate.getTime() < todayStart.getTime(); });
+            const dueToday = pending.filter(task => { const plannedDate = parseDate(task.planned); if (!plannedDate) return false; plannedDate.setHours(0, 0, 0, 0); return plannedDate.getTime() === todayStart.getTime(); });
+            const { start: prevWeekStart, end: prevWeekEnd } = getPreviousWeekRange();
+            const dateRangeStr = `(${formatDateForRange(prevWeekStart)} - ${formatDateForRange(prevWeekEnd)})`;
+            const prevWeekTasks = employeeTasks.filter(task => isTaskRelevantForPeriod(task, prevWeekStart, prevWeekEnd));
+            const prevWeekNbdTasks = prevWeekTasks.filter(t => t.systemType === 'Incoming NBD'); const prevWeekRegularTasks = prevWeekTasks.filter(t => t.systemType !== 'Incoming NBD');
+            const plannedForNBD = prevWeekNbdTasks.length * 5; const plannedForRegular = prevWeekRegularTasks.length;
+            const planVsActual_Planned_Count = plannedForNBD + plannedForRegular;
+            const actualForNBD = prevWeekNbdTasks.reduce((sum, task) => sum + getNbdActualCount(task), 0);
+            const actualForRegular = prevWeekRegularTasks.filter(t => t.actual && t.actual.trim() !== '').length;
+            const planVsActual_Done_Count = actualForNBD + actualForRegular;
+            const planVsActual_NotDone_Count = planVsActual_Planned_Count - planVsActual_Done_Count;
+            const planVsActual_NotDone_Percent = planVsActual_Planned_Count > 0 ? Math.round((planVsActual_NotDone_Count / planVsActual_Planned_Count) * 100) : 0;
+            const regularCompletedTasks = prevWeekRegularTasks.filter(t => t.actual && t.actual.trim() !== '');
+            const onTime_Planned_Count = regularCompletedTasks.length;
+            const onTime_Actual_Tasks = regularCompletedTasks.filter(t => {
+                const plannedDate = parseDate(t.planned); const actualDate = parseDate(t.actual!); if (!plannedDate || !actualDate) return false;
+                return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) === 0;
+            });
+            const onTime_Actual_Count = onTime_Actual_Tasks.length;
+            const onTime_NotDone_Count = onTime_Planned_Count - onTime_Actual_Count;
+            const onTime_NotDone_Percent = onTime_Planned_Count > 0 ? Math.round((onTime_NotDone_Count / onTime_Planned_Count) * 100) : 0;
+            const doneAndDelayedTasks = prevWeekTasks.filter(task => {
+                const actualDate = parseDate(task.actual); if (!actualDate) return false;
+                const plannedDate = parseDate(task.planned); if (!plannedDate) return false;
+                return calculateWorkingDaysDelay(plannedDate, actualDate, holidays) > 0;
+            });
+            const totalDaysGiven = doneAndDelayedTasks.reduce((sum, task) => { const days = parseInt(task.daysGiven || '0', 10); return sum + (isNaN(days) ? 0 : days); }, 0);
+            const totalWorkDoneDays = doneAndDelayedTasks.reduce((sum, task) => { if (task.workDoneDay) { const days = parseInt(task.workDoneDay, 10); return sum + (isNaN(days) ? 0 : days); } return sum; }, 0);
+            const dayDelayPercent = totalDaysGiven > 0 ? Math.round(((totalWorkDoneDays - totalDaysGiven) / totalDaysGiven) * 100) : 0;
+
+            const notDoneTasksRegular = prevWeekRegularTasks.filter(t => !t.actual || t.actual.trim() === '');
+            const notDoneTasksNBD = prevWeekNbdTasks.filter(t => getNbdActualCount(t) < 5).map(t => ({...t, task: `${t.task} (${getNbdActualCount(t)} of 5 completed)`}));
+            const notDoneTasks = [...notDoneTasksRegular, ...notDoneTasksNBD];
+            const notOnTimeTasks = regularCompletedTasks.filter(t => !onTime_Actual_Tasks.includes(t));
+
+            return {
+                pendingTasks: pending, overdueTasks: overdue, dueTodayTasks: dueToday, prevWeekDateRange: dateRangeStr,
+                planVsActual_Planned: planVsActual_Planned_Count, planVsActual_Actual: planVsActual_Done_Count, planVsActual_Percent: planVsActual_NotDone_Percent,
+                onTime_Planned: onTime_Planned_Count, onTime_Actual: onTime_Actual_Count, onTime_Percent: onTime_NotDone_Percent,
+                dayDelay_Planned: totalDaysGiven, dayDelay_Actual: totalWorkDoneDays, dayDelay_Percent: dayDelayPercent,
+                notDoneTasksForPrevWeek: notDoneTasks,
+                notOnTimeTasksForPrevWeek: notOnTimeTasks
+            };
+        })();
+
+        return { employeeDetails, attendance: attendanceBreakdown, kpis: kpiData, monthlyNbdCounts: employeeMonthlyNbdCounts };
+    }, [selectedMisEmployeeName, misWeekdayTasks, dailyAttendanceData, holidays, people]);
+
+
     const allEmployees = useMemo(() => {
         const combined = [...negativeScoreEmployees, ...onTrackEmployees];
         const names = new Set(combined.map(person => person.name.trim()).filter(Boolean));
@@ -1442,10 +1594,22 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         let tasksToFilter: DashboardTask[];
         let title: string;
 
+        // When in Employee MIS view, use the tasks for that employee. Otherwise, use the logged-in user's tasks.
+        const inMisEmployeeView = dashboardMode === 'employeeMIS' && misSubView === 'employee' && misEmployeeViewData;
+        
+        const sourcePending = inMisEmployeeView ? misEmployeeViewData.kpis.pendingTasks : pendingTasks;
+        const sourceOverdue = inMisEmployeeView ? misEmployeeViewData.kpis.overdueTasks : overdueTasks;
+        const sourceToday = inMisEmployeeView ? misEmployeeViewData.kpis.dueTodayTasks : dueTodayTasks;
+
         switch (filterMode) {
-            case 'overdue': tasksToFilter = overdueTasks; title = 'Overdue Tasks'; break;
-            case 'today': tasksToFilter = dueTodayTasks; title = 'Tasks Due Today'; break;
-            default: tasksToFilter = pendingTasks; title = 'My Pending Tasks'; break;
+            case 'overdue': tasksToFilter = sourceOverdue; title = 'Overdue Tasks'; break;
+            case 'today': tasksToFilter = sourceToday; title = 'Tasks Due Today'; break;
+            default: tasksToFilter = sourcePending; title = 'My Pending Tasks'; break;
+        }
+        
+        // Adjust title for Employee View
+        if (inMisEmployeeView) {
+            title = title.replace('My', `${selectedMisEmployeeName}'s`);
         }
 
         if (!searchTerm) return { filteredPendingTasks: tasksToFilter, tableTitle: title };
@@ -1456,7 +1620,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             task.systemType.toLowerCase().includes(searchTerm.toLowerCase())
         );
         return { filteredPendingTasks: filtered, tableTitle: title };
-    }, [pendingTasks, overdueTasks, dueTodayTasks, filterMode, searchTerm]);
+    }, [pendingTasks, overdueTasks, dueTodayTasks, filterMode, searchTerm, dashboardMode, misSubView, misEmployeeViewData, selectedMisEmployeeName]);
 
     const selectableTasks = useMemo(() => {
         return filteredPendingTasks.filter(task => {
@@ -1764,7 +1928,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                         </div>
                     </div>
 
-                    {selectedMisEmployeeName && misReportData && (
+                    {selectedMisEmployeeName && (
                         <div className="mis-report-view" ref={reportRef} style={{ paddingTop: '32px' }}>
                             <h3 className="mis-view-title">Detailed Report</h3>
                             <div className="mis-filters">
@@ -1774,169 +1938,264 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                         {allEmployees.map(name => <option key={name} value={name}>{name}</option>)}
                                     </select>
                                 </div>
-                                <div className="filter-group">
-                                    <label htmlFor="select-period">Select Period</label>
-                                    <select id="select-period" value={selectedMisPeriod} onChange={e => setSelectedMisPeriod(e.target.value)}>
-                                        {periodOptions.map(option => (
-                                            <option key={option.value} value={option.value}>
-                                                {option.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
+                                {misSubView === 'mis' && (
+                                    <div className="filter-group">
+                                        <label htmlFor="select-period">Select Period</label>
+                                        <select id="select-period" value={selectedMisPeriod} onChange={e => setSelectedMisPeriod(e.target.value)}>
+                                            {periodOptions.map(option => (
+                                                <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="dashboard-main">
-                                <aside className="dashboard-sidebar">
-                                    <div className="dashboard-card user-profile-card">
-                                        <div className="dashboard-avatar">
-                                            {misReportData.employeeDetails.photoUrl ? <img src={misReportData.employeeDetails.photoUrl} alt={`${misReportData.employeeDetails.name}'s profile`} referrerPolicy="no-referrer" /> : <UserIcon />}
+                             <div className="dashboard-view-switcher" style={{ marginBottom: '24px' }}>
+                                <button onClick={() => setMisSubView('mis')} className={misSubView === 'mis' ? 'active' : ''}>MIS View</button>
+                                <button onClick={() => setMisSubView('employee')} className={misSubView === 'employee' ? 'active' : ''}>Employee View</button>
+                            </div>
+
+                            {misSubView === 'mis' && misReportData ? (
+                                <div className="dashboard-main">
+                                    <aside className="dashboard-sidebar">
+                                        <div className="dashboard-card user-profile-card">
+                                            <div className="dashboard-avatar">
+                                                {misReportData.employeeDetails.photoUrl ? <img src={misReportData.employeeDetails.photoUrl} alt={`${misReportData.employeeDetails.name}'s profile`} referrerPolicy="no-referrer" /> : <UserIcon />}
+                                            </div>
+                                            <h3 className="user-name">{misReportData.employeeDetails.name}</h3>
+                                            <p className="user-email">{misReportData.employeeDetails.email}</p>
                                         </div>
-                                        <h3 className="user-name">{misReportData.employeeDetails.name}</h3>
-                                        <p className="user-email">{misReportData.employeeDetails.email}</p>
-                                    </div>
-                                    <div className="dashboard-card attendance-card">
-                                        <h3>Attendance Summary <span className="date-range">{misReportData.attendance.dateRange}</span></h3>
-                                        <div className="attendance-progress">
-                                            <CircularProgress percentage={misReportData.attendance.attendancePercentage} color="#22c55e" />
-                                            <div className="attendance-details-list">
-                                                 <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}>
-                                                    <span>Working Days</span>
-                                                    <span className="detail-value">{misReportData.attendance.workingDays}</span>
-                                                </div>
-                                                <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Present Days', dates: misReportData.attendance.presentDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Present Days', dates: misReportData.attendance.presentDates })}>
-                                                    <span>Present</span>
-                                                    <span className="detail-value">{misReportData.attendance.daysPresent}</span>
-                                                </div>
-                                                {misReportData.attendance.otherStatusesBreakdown.map(({ status, count, dates }) => (
-                                                    <div className="detail-item" key={status} role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: `${status} Dates`, dates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: `${status} Dates`, dates })}>
-                                                        <span>{status}</span>
-                                                        <span className="detail-value">{count}</span>
+                                        <div className="dashboard-card attendance-card">
+                                            <h3>Attendance Summary <span className="date-range">{misReportData.attendance.dateRange}</span></h3>
+                                            <div className="attendance-progress">
+                                                <CircularProgress percentage={misReportData.attendance.attendancePercentage} color="#22c55e" />
+                                                <div className="attendance-details-list">
+                                                    <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}>
+                                                        <span>Working Days</span>
+                                                        <span className="detail-value">{misReportData.attendance.workingDays}</span>
                                                     </div>
-                                                ))}
-                                                {misReportData.attendance.notMarked > 0 && (
-                                                    <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}>
-                                                        <span>Not Marked</span>
-                                                        <span className="detail-value">{misReportData.attendance.notMarked}</span>
+                                                    <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Present Days', dates: misReportData.attendance.presentDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Present Days', dates: misReportData.attendance.presentDates })}>
+                                                        <span>Present</span>
+                                                        <span className="detail-value">{misReportData.attendance.daysPresent}</span>
                                                     </div>
-                                                )}
+                                                    {misReportData.attendance.otherStatusesBreakdown.map(({ status, count, dates }) => (
+                                                        <div className="detail-item" key={status} role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: `${status} Dates`, dates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: `${status} Dates`, dates })}>
+                                                            <span>{status}</span>
+                                                            <span className="detail-value">{count}</span>
+                                                        </div>
+                                                    ))}
+                                                    {misReportData.attendance.notMarked > 0 && (
+                                                        <div className="detail-item" role="button" tabIndex={0} onClick={() => setAttendanceModalData({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setAttendanceModalData({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}>
+                                                            <span>Not Marked</span>
+                                                            <span className="detail-value">{misReportData.attendance.notMarked}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </aside>
-                                <main className="dashboard-content">
-                                    <div className="dashboard-card performance-card">
-                                        <h3>Performance Overview <span className="date-range">{misReportData.dateRange}</span></h3>
-                                        <table className="performance-table">
-                                            <thead><tr><th>KRA</th><th>KPI</th><th>PLANNED</th><th>ACTUAL</th><th>ACTUAL %</th></tr></thead>
-                                            <tbody>
-                                                <tr>
-                                                    <td>All work should be done as per plan</td><td>% work NOT done</td>
-                                                    <td className="numeric">{misReportData.performance.planVsActual.planned}</td><td className="numeric">{misReportData.performance.planVsActual.actual}</td>
-                                                    <td className="numeric actual-percent" style={{ color: misReportData.performance.planVsActual.percent > 0 ? '#ef4444' : '#22c55e' }}>{misReportData.performance.planVsActual.percent}%</td>
-                                                </tr>
-                                                <tr>
-                                                    <td>All work should be done on time</td><td>% work NOT done on time</td>
-                                                    <td className="numeric">{misReportData.performance.onTime.planned}</td><td className="numeric">{misReportData.performance.onTime.actual}</td>
-                                                    <td className="numeric actual-percent" style={{ color: misReportData.performance.onTime.percent > 0 ? '#ef4444' : '#22c55e' }}>{misReportData.performance.onTime.percent}%</td>
-                                                </tr>
-                                                <tr>
-                                                    <td>Days Given For Tasks</td><td>% Delay in Work Done</td>
-                                                    <td className="numeric">{misReportData.performance.dayDelay.planned}</td>
-                                                    <td className="numeric">{misReportData.performance.dayDelay.actual}</td>
-                                                    <td className="numeric actual-percent" style={{ color: misReportData.performance.dayDelay.percent > 0 ? '#ef4444' : '#22c55e' }}>
-                                                        {misReportData.performance.dayDelay.percent}%
-                                                    </td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="dashboard-card mis-task-list-card">
-                                        <div className="mis-task-list-header">
-                                            <span>Work NOT Done for Selected Period</span>
-                                            <span className="task-count-badge">{misReportData.notDoneTasks.length}</span>
+                                    </aside>
+                                    <main className="dashboard-content">
+                                        <div className="dashboard-card performance-card">
+                                            <h3>Performance Overview <span className="date-range">{misReportData.dateRange}</span></h3>
+                                            <table className="performance-table">
+                                                <thead><tr><th>KRA</th><th>KPI</th><th>PLANNED</th><th>ACTUAL</th><th>ACTUAL %</th></tr></thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>All work should be done as per plan</td><td>% work NOT done</td>
+                                                        <td className="numeric">{misReportData.performance.planVsActual.planned}</td><td className="numeric">{misReportData.performance.planVsActual.actual}</td>
+                                                        <td className="numeric actual-percent" style={{ color: misReportData.performance.planVsActual.percent > 0 ? '#ef4444' : '#22c55e' }}>{misReportData.performance.planVsActual.percent}%</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>All work should be done on time</td><td>% work NOT done on time</td>
+                                                        <td className="numeric">{misReportData.performance.onTime.planned}</td><td className="numeric">{misReportData.performance.onTime.actual}</td>
+                                                        <td className="numeric actual-percent" style={{ color: misReportData.performance.onTime.percent > 0 ? '#ef4444' : '#22c55e' }}>{misReportData.performance.onTime.percent}%</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Days Given For Tasks</td><td>% Delay in Work Done</td>
+                                                        <td className="numeric">{misReportData.performance.dayDelay.planned}</td>
+                                                        <td className="numeric">{misReportData.performance.dayDelay.actual}</td>
+                                                        <td className="numeric actual-percent" style={{ color: misReportData.performance.dayDelay.percent > 0 ? '#ef4444' : '#22c55e' }}>
+                                                            {misReportData.performance.dayDelay.percent}%
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
                                         </div>
-                                        <div className="mis-task-list-body">
-                                            {misReportData.notDoneTasks.length > 0 ? (
-                                                <table className="mis-task-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>TASK ID</th>
-                                                            <th>SYSTEM TYPE</th>
-                                                            <th>STEP CODE</th>
-                                                            <th>TASK</th>
-                                                            <th>PLANNED</th>
-                                                            <th style={{ textAlign: 'center' }}>DAYS GIVEN</th>
-                                                            <th className="delay-days">DELAY DAYS</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {misReportData.notDoneTasks.map(task => (
-                                                            <tr key={task.id} className="clickable-row" onClick={() => setHistoryModalTask(task)}>
-                                                                <td>{task.taskId}</td>
-                                                                <td>{task.systemType}</td>
-                                                                <td>{task.stepCode}</td>
-                                                                <td>{task.task}</td>
-                                                                <td>{task.planned.split(' ')[0]}</td>
-                                                                <td style={{ textAlign: 'center', fontWeight: '700' }}>{task.daysGiven || ''}</td>
-                                                                <td className="delay-days">{task.workDoneDay || ''}</td>
+                                        <div className="dashboard-card mis-task-list-card">
+                                            <div className="mis-task-list-header">
+                                                <span>Work NOT Done for Selected Period</span>
+                                                <span className="task-count-badge">{misReportData.notDoneTasks.length}</span>
+                                            </div>
+                                            <div className="mis-task-list-body">
+                                                {misReportData.notDoneTasks.length > 0 ? (
+                                                    <table className="mis-task-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>TASK ID</th>
+                                                                <th>SYSTEM TYPE</th>
+                                                                <th>STEP CODE</th>
+                                                                <th>TASK</th>
+                                                                <th>PLANNED</th>
+                                                                <th style={{ textAlign: 'center' }}>DAYS GIVEN</th>
+                                                                <th className="delay-days">DELAY DAYS</th>
                                                             </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            ) : (
-                                                <div className="no-tasks-message">
-                                                    No tasks to display for this category in the selected period.
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="dashboard-card mis-task-list-card">
-                                        <div className="mis-task-list-header">
-                                            <span>Work NOT Done On Time for Selected Period</span>
-                                            <span className="task-count-badge">{misReportData.lateTasks.length}</span>
-                                        </div>
-                                        <div className="mis-task-list-body">
-                                            {misReportData.lateTasks.length > 0 ? (
-                                                <table className="mis-task-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>TASK ID</th>
-                                                            <th>SYSTEM TYPE</th>
-                                                            <th>STEP CODE</th>
-                                                            <th>TASK</th>
-                                                            <th>PLANNED</th>
-                                                            <th>ACTUAL</th>
-                                                            <th style={{ textAlign: 'center' }}>DAYS GIVEN</th>
-                                                            <th className="delay-days">DAYS TAKEN</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {misReportData.lateTasks.map(task => {
-                                                            return (
+                                                        </thead>
+                                                        <tbody>
+                                                            {misReportData.notDoneTasks.map(task => (
                                                                 <tr key={task.id} className="clickable-row" onClick={() => setHistoryModalTask(task)}>
                                                                     <td>{task.taskId}</td>
                                                                     <td>{task.systemType}</td>
                                                                     <td>{task.stepCode}</td>
                                                                     <td>{task.task}</td>
                                                                     <td>{task.planned.split(' ')[0]}</td>
-                                                                    <td>{task.actual?.split(' ')[0]}</td>
                                                                     <td style={{ textAlign: 'center', fontWeight: '700' }}>{task.daysGiven || ''}</td>
                                                                     <td className="delay-days">{task.workDoneDay || ''}</td>
                                                                 </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                ) : (
+                                                    <div className="no-tasks-message">
+                                                        No tasks to display for this category in the selected period.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="dashboard-card mis-task-list-card">
+                                            <div className="mis-task-list-header">
+                                                <span>Work NOT Done On Time for Selected Period</span>
+                                                <span className="task-count-badge">{misReportData.lateTasks.length}</span>
+                                            </div>
+                                            <div className="mis-task-list-body">
+                                                {misReportData.lateTasks.length > 0 ? (
+                                                    <table className="mis-task-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>TASK ID</th>
+                                                                <th>SYSTEM TYPE</th>
+                                                                <th>STEP CODE</th>
+                                                                <th>TASK</th>
+                                                                <th>PLANNED</th>
+                                                                <th>ACTUAL</th>
+                                                                <th style={{ textAlign: 'center' }}>DAYS GIVEN</th>
+                                                                <th className="delay-days">DAYS TAKEN</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {misReportData.lateTasks.map(task => {
+                                                                return (
+                                                                    <tr key={task.id} className="clickable-row" onClick={() => setHistoryModalTask(task)}>
+                                                                        <td>{task.taskId}</td>
+                                                                        <td>{task.systemType}</td>
+                                                                        <td>{task.stepCode}</td>
+                                                                        <td>{task.task}</td>
+                                                                        <td>{task.planned.split(' ')[0]}</td>
+                                                                        <td>{task.actual?.split(' ')[0]}</td>
+                                                                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{task.daysGiven || ''}</td>
+                                                                        <td className="delay-days">{task.workDoneDay || ''}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
+                                                ) : (
+                                                    <div className="no-tasks-message">
+                                                        No tasks to display for this category in the selected period.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </main>
+                                </div>
+                             ) : misSubView === 'employee' && misEmployeeViewData ? (
+                                <div className="dashboard-main">
+                                    <aside className="dashboard-sidebar">
+                                        <div className="dashboard-card user-profile-card">
+                                            <div className="dashboard-avatar">
+                                                {misEmployeeViewData.employeeDetails.photoUrl ? <img src={misEmployeeViewData.employeeDetails.photoUrl} alt={`${misEmployeeViewData.employeeDetails.name}'s profile`} referrerPolicy="no-referrer" /> : <UserIcon />}
+                                            </div>
+                                            <h3 className="user-name">{misEmployeeViewData.employeeDetails.name}</h3>
+                                            <p className="user-email">{misEmployeeViewData.employeeDetails.email}</p>
+                                        </div>
+                                        <div className="dashboard-card attendance-card">
+                                            <h3>Weekly Attendance <span className="date-range">{misEmployeeViewData.kpis.prevWeekDateRange}</span></h3>
+                                            <div className="attendance-progress">
+                                                <CircularProgress percentage={misEmployeeViewData.attendance.attendancePercentage} color="#22c55e" />
+                                                <div className="attendance-details-list">
+                                                     <div className="detail-item"><span>Working Days</span><span className="detail-value">{misEmployeeViewData.attendance.workingDays}</span></div>
+                                                     <div className="detail-item"><span>Present</span><span className="detail-value">{misEmployeeViewData.attendance.daysPresent}</span></div>
+                                                    {misEmployeeViewData.attendance.otherStatusesBreakdown.map(({ status, count }) => (<div className="detail-item" key={status}><span>{status}</span><span className="detail-value">{count}</span></div>))}
+                                                    {misEmployeeViewData.attendance.notMarked > 0 && (<div className="detail-item"><span>Not Marked</span><span className="detail-value">{misEmployeeViewData.attendance.notMarked}</span></div>)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </aside>
+                                    <main className="dashboard-content">
+                                         <div className="dashboard-card performance-card">
+                                            <h3>Weekly Performance <span className="date-range">{misEmployeeViewData.kpis.prevWeekDateRange}</span></h3>
+                                            <table className="performance-table">
+                                                <thead><tr><th>KRA</th><th>KPI</th><th>PLANNED</th><th>ACTUAL</th><th>ACTUAL %</th></tr></thead>
+                                                <tbody>
+                                                    <tr><td>All work should be done as per plan</td><td>% work NOT done</td><td className="numeric">{misEmployeeViewData.kpis.planVsActual_Planned}</td><td className="numeric">{misEmployeeViewData.kpis.planVsActual_Actual}</td><td className="numeric actual-percent" style={{ color: misEmployeeViewData.kpis.planVsActual_Percent > 10 ? '#ef4444' : '#22c55e' }}>{misEmployeeViewData.kpis.planVsActual_Percent}%</td></tr>
+                                                    <tr><td>All work should be done on time</td><td>% work NOT done on time</td><td className="numeric">{misEmployeeViewData.kpis.onTime_Planned}</td><td className="numeric">{misEmployeeViewData.kpis.onTime_Actual}</td><td className="numeric actual-percent" style={{ color: misEmployeeViewData.kpis.onTime_Percent > 10 ? '#ef4444' : '#22c55e' }}>{misEmployeeViewData.kpis.onTime_Percent}%</td></tr>
+                                                    <tr><td>Days Given For Tasks</td><td>% Delay in Work Done</td><td className="numeric">{misEmployeeViewData.kpis.dayDelay_Planned}</td><td className="numeric">{misEmployeeViewData.kpis.dayDelay_Actual}</td><td className="numeric actual-percent" style={{ color: misEmployeeViewData.kpis.dayDelay_Percent > 10 ? '#ef4444' : '#22c55e' }}>{misEmployeeViewData.kpis.dayDelay_Percent}%</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="stats-grid">
+                                            <StatCard title="Pending Tasks" value={misEmployeeViewData.kpis.pendingTasks.length} icon={<PendingIcon />} className="stat-card--pending" />
+                                            <StatCard title="Overdue Tasks" value={misEmployeeViewData.kpis.overdueTasks.length} icon={<OverdueIcon />} className="stat-card--overdue" />
+                                            <StatCard title="Tasks Due Today" value={misEmployeeViewData.kpis.dueTodayTasks.length} icon={<TodayIcon />} className="stat-card--today" />
+                                        </div>
+                                        <div className="dashboard-card pending-tasks-card">
+                                            <div className="card-header"><h3>{selectedMisEmployeeName}'s Pending Tasks ({misEmployeeViewData.kpis.pendingTasks.length})</h3></div>
+                                            <div className="table-container" style={{maxHeight: '400px'}}>
+                                                <table className="pending-tasks-table">
+                                                    <thead><tr><th>Task ID</th><th>System Type</th><th>TASK</th><th>Planned</th><th>DOER NAME</th><th></th></tr></thead>
+                                                    <tbody>
+                                                        {misEmployeeViewData.kpis.pendingTasks.length > 0 ? misEmployeeViewData.kpis.pendingTasks.map(task => {
+                                                            let taskDescription = task.task;
+                                                            if (task.systemType === 'Incoming NBD') {
+                                                                const plannedDate = parseDate(task.planned);
+                                                                let nbdActualCount = 0;
+                                                                if (plannedDate && task.userName) {
+                                                                    const key = `${task.userName}-${plannedDate.getFullYear()}-${plannedDate.getMonth()}`;
+                                                                    nbdActualCount = misEmployeeViewData.monthlyNbdCounts.get(key) || 0;
+                                                                } else { nbdActualCount = getNbdActualCount(task); }
+                                                                taskDescription = `${task.task} (${nbdActualCount} of 5 completed)`;
+                                                            }
+                                                            const isActionable = ALLOWED_SYSTEM_TYPES_FOR_SUBMIT.includes(task.systemType);
+                                                            const isQueued = inFlightTaskIds.has(task.id);
+                                                            return (
+                                                                <tr key={task.id}>
+                                                                    <td>{task.taskId}</td>
+                                                                    <td>{task.systemType}</td>
+                                                                    <td>{taskDescription}</td>
+                                                                    <td>{task.planned.split(' ')[0]}</td>
+                                                                    <td>{task.userName || task.name}</td>
+                                                                    <td>
+                                                                        {isActionable && (
+                                                                            <button
+                                                                                className={`btn-mark-done ${isQueued ? 'btn-queued' : ''}`}
+                                                                                onClick={() => handleMarkDoneClick(task)}
+                                                                                disabled={isSubmitting || isQueued}
+                                                                            >
+                                                                                {isQueued ? 'Submitting...' : 'Mark Done'}
+                                                                            </button>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
                                                             );
-                                                        })}
+                                                        }) : (<tr><td colSpan={6} style={{textAlign: 'center', padding: '32px'}}>No pending tasks found for this employee.</td></tr>)}
                                                     </tbody>
                                                 </table>
-                                            ) : (
-                                                <div className="no-tasks-message">
-                                                    No tasks to display for this category in the selected period.
-                                                </div>
-                                            )}
+                                            </div>
                                         </div>
-                                    </div>
-                                </main>
-                            </div>
+                                    </main>
+                                </div>
+                             ) : null}
                         </div>
                     )}
                 </div>
