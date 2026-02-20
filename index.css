@@ -1,3 +1,4 @@
+
 :root {
     /* New Vibrant Color Scheme */
     --primary-color-start: #6366f1; /* Indigo 500 */
@@ -1547,6 +1548,9 @@ textarea {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    max-height: 250px;
+    overflow-y: auto;
+    padding: 4px; /* Add some padding for scrollbar visibility */
 }
 
 .employee-tag {
