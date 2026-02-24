@@ -2012,14 +2012,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                         <td className="numeric">{misReportData.performance.onTime.planned}</td><td className="numeric">{misReportData.performance.onTime.actual}</td>
                                                         <td className="numeric actual-percent" style={{ color: misReportData.performance.onTime.percent > 0 ? '#ef4444' : '#22c55e' }}>{misReportData.performance.onTime.percent}%</td>
                                                     </tr>
-                                                    <tr>
-                                                        <td>Days Given For Tasks</td><td>% Delay in Work Done</td>
-                                                        <td className="numeric">{misReportData.performance.dayDelay.planned}</td>
-                                                        <td className="numeric">{misReportData.performance.dayDelay.actual}</td>
-                                                        <td className="numeric actual-percent" style={{ color: misReportData.performance.dayDelay.percent > 0 ? '#ef4444' : '#22c55e' }}>
-                                                            {misReportData.performance.dayDelay.percent}%
-                                                        </td>
-                                                    </tr>
                                                 </tbody>
                                             </table>
                                         </div>
@@ -2028,7 +2020,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                 <span>Work NOT Done for Selected Period</span>
                                                 <span className="task-count-badge">{misReportData.notDoneTasks.length}</span>
                                             </div>
-                                            <div className="mis-task-list-body">
+                                            <div className="mis-task-list-body" style={{overflowX: 'auto'}}>
                                                 {misReportData.notDoneTasks.length > 0 ? (
                                                     <table className="mis-task-table">
                                                         <thead>
@@ -2068,7 +2060,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                 <span>Work NOT Done On Time for Selected Period</span>
                                                 <span className="task-count-badge">{misReportData.lateTasks.length}</span>
                                             </div>
-                                            <div className="mis-task-list-body">
+                                            <div className="mis-task-list-body" style={{overflowX: 'auto'}}>
                                                 {misReportData.lateTasks.length > 0 ? (
                                                     <table className="mis-task-table">
                                                         <thead>
@@ -2081,10 +2073,14 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                                 <th>ACTUAL</th>
                                                                 <th style={{ textAlign: 'center' }}>DAYS GIVEN</th>
                                                                 <th className="delay-days">DAYS TAKEN</th>
+                                                                 <th className="delay-days">% Delay</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
                                                             {misReportData.lateTasks.map(task => {
+                                                                const daysGiven = parseInt(task.daysGiven || '0', 10);
+                                                                const daysTaken = parseInt(task.workDoneDay || '0', 10);
+                                                                const delayPercentage = daysGiven > 0 ? Math.round(((daysTaken - daysGiven) / daysGiven) * 100) : 0;
                                                                 return (
                                                                     <tr key={task.id} className="clickable-row" onClick={() => setHistoryModalTask(task)}>
                                                                         <td>{task.taskId}</td>
@@ -2093,8 +2089,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                                         <td>{task.task}</td>
                                                                         <td>{task.planned.split(' ')[0]}</td>
                                                                         <td>{task.actual?.split(' ')[0]}</td>
-                                                                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{task.daysGiven || ''}</td>
-                                                                        <td className="delay-days">{task.workDoneDay || ''}</td>
+                                                                        <td style={{ textAlign: 'center', fontWeight: '700' }}>{daysGiven > 0 ? daysGiven : ''}</td>
+                                                                        <td className="delay-days">{daysTaken > 0 ? daysTaken : ''}</td>
+                                                                        <td className="delay-days" style={{ color: delayPercentage > 0 ? '#ef4444' : '#22c55e' }}>
+                                                                            {delayPercentage > 0 ? `${delayPercentage}%` : ''}
+                                                                        </td>
                                                                     </tr>
                                                                 );
                                                             })}
@@ -2140,7 +2139,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                 <tbody>
                                                     <tr><td>All work should be done as per plan</td><td>% work NOT done</td><td className="numeric">{misEmployeeViewData.kpis.planVsActual_Planned}</td><td className="numeric">{misEmployeeViewData.kpis.planVsActual_Actual}</td><td className="numeric actual-percent" style={{ color: misEmployeeViewData.kpis.planVsActual_Percent > 10 ? '#ef4444' : '#22c55e' }}>{misEmployeeViewData.kpis.planVsActual_Percent}%</td></tr>
                                                     <tr><td>All work should be done on time</td><td>% work NOT done on time</td><td className="numeric">{misEmployeeViewData.kpis.onTime_Planned}</td><td className="numeric">{misEmployeeViewData.kpis.onTime_Actual}</td><td className="numeric actual-percent" style={{ color: misEmployeeViewData.kpis.onTime_Percent > 10 ? '#ef4444' : '#22c55e' }}>{misEmployeeViewData.kpis.onTime_Percent}%</td></tr>
-                                                    <tr><td>Days Given For Tasks</td><td>% Delay in Work Done</td><td className="numeric">{misEmployeeViewData.kpis.dayDelay_Planned}</td><td className="numeric">{misEmployeeViewData.kpis.dayDelay_Actual}</td><td className="numeric actual-percent" style={{ color: misEmployeeViewData.kpis.dayDelay_Percent > 10 ? '#ef4444' : '#22c55e' }}>{misEmployeeViewData.kpis.dayDelay_Percent}%</td></tr>
+
                                                 </tbody>
                                             </table>
                                         </div>
@@ -2169,7 +2168,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                     `}</style>
                                     <div className="dashboard-card pending-tasks-card">
                                             <div className="card-header"><h3>{selectedMisEmployeeName}'s Pending Tasks ({misEmployeeViewData.kpis.pendingTasks.length})</h3></div>
-                                            <div className="table-container" style={{maxHeight: '400px'}}>
+                                            <div className="table-container" style={{maxHeight: '400px', overflowX: 'auto'}}>
                                                 <table className="pending-tasks-table employee-pending-tasks-table employee-pending-tasks-table-forced">
                                                     <thead><tr><th>Task ID</th><th>System Type</th><th>TASK</th><th>Planned</th><th>DOER NAME</th><th></th></tr></thead>
                                                     <tbody>
@@ -2281,30 +2280,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                 <td className="numeric actual-percent" style={{ color: onTime_Percent > 10 ? '#ef4444' : '#22c55e' }}>{onTime_Percent}%</td>
                                                 <td><ArrowIcon className={expandedKpi === 'notOnTime' ? 'expanded' : ''} /></td>
                                             </tr>
-                                            <tr>
-                                                <td>Days Given For Tasks</td>
-                                                <td>% Delay in Work Done</td>
-                                                <td className="numeric">{dayDelay_Planned}</td>
-                                                <td className="numeric">{dayDelay_Actual}</td>
-                                                <td className="numeric actual-percent" style={{ color: dayDelay_Percent > 10 ? '#ef4444' : '#22c55e' }}>
-                                                    {dayDelay_Percent}%
-                                                </td>
-                                                <td></td>
-                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
-                                {expandedKpi && (
+                                {expandedKpi === 'notDone' && (
                                     <div className="dashboard-card pending-tasks-card">
                                         <div className="card-header">
-                                            <h3>
-                                                {expandedKpi === 'notDone' 
-                                                    ? `Work NOT Done (${notDoneTasksForPrevWeek.length} Tasks)`
-                                                    : `Work NOT Done on Time (${notOnTimeTasksForPrevWeek.length} Tasks)`
-                                                }
-                                            </h3>
+                                            <h3>Work NOT Done ({notDoneTasksForPrevWeek.length} Tasks)</h3>
                                         </div>
-                                        <div className="table-container" style={{maxHeight: '400px'}}>
+                                        <div className="table-container" style={{maxHeight: '400px', overflowX: 'auto'}}>
                                             <table className="pending-tasks-table kpi-details-table">
                                                 <thead>
                                                     <tr>
@@ -2317,7 +2301,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {(expandedKpi === 'notDone' ? notDoneTasksForPrevWeek : notOnTimeTasksForPrevWeek).map(task => (
+                                                    {notDoneTasksForPrevWeek.map(task => (
                                                         <tr key={task.id}>
                                                             <td>{task.taskId}</td>
                                                             <td>{task.systemType}</td>
@@ -2327,8 +2311,57 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                                             <td>{task.actual ? task.actual.split(' ')[0] : '-'}</td>
                                                         </tr>
                                                     ))}
-                                                    {(expandedKpi === 'notDone' ? notDoneTasksForPrevWeek.length === 0 : notOnTimeTasksForPrevWeek.length === 0) && (
+                                                    {notDoneTasksForPrevWeek.length === 0 && (
                                                         <tr><td colSpan={6} style={{textAlign: 'center', padding: '32px'}}>No tasks to display for this category.</td></tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                {expandedKpi === 'notOnTime' && (
+                                    <div className="dashboard-card pending-tasks-card">
+                                        <div className="card-header">
+                                            <h3>Work NOT Done on Time ({notOnTimeTasksForPrevWeek.length} Tasks)</h3>
+                                        </div>
+                                        <div className="table-container" style={{maxHeight: '400px', overflowX: 'auto'}}>
+                                            <table className="dashboard-tasks-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>TASK ID</th>
+                                                        <th>SYSTEM TYPE</th>
+                                                        <th>STEP CODE</th>
+                                                        <th>TASK</th>
+                                                        <th>PLANNED</th>
+                                                        <th>ACTUAL</th>
+                                                        <th>DAYS GIVEN</th>
+                                                        <th>DAYS TAKEN</th>
+                                                        <th>% Delay</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {notOnTimeTasksForPrevWeek.map(task => {
+                                                        const daysGiven = parseInt(task.daysGiven || '0', 10);
+                                                        const daysTaken = parseInt(task.workDoneDay || '0', 10);
+                                                        const delayPercentage = daysGiven > 0 ? Math.round(((daysTaken - daysGiven) / daysGiven) * 100) : 0;
+                                                        return (
+                                                            <tr key={task.id}>
+                                                                <td>{task.taskId}</td>
+                                                                <td>{task.systemType}</td>
+                                                                <td>{task.stepCode}</td>
+                                                                <td>{task.task}</td>
+                                                                <td>{task.planned.split(' ')[0]}</td>
+                                                                <td>{task.actual ? task.actual.split(' ')[0] : '-'}</td>
+                                                                <td className="numeric">{daysGiven > 0 ? daysGiven : ''}</td>
+                                                                <td className="numeric">{daysTaken > 0 ? daysTaken : ''}</td>
+                                                                <td className="numeric" style={{ color: delayPercentage > 0 ? '#ef4444' : '#22c55e' }}>
+                                                                    {delayPercentage > 0 ? `${delayPercentage}%` : ''}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                    {notOnTimeTasksForPrevWeek.length === 0 && (
+                                                        <tr><td colSpan={9} style={{textAlign: 'center', padding: '32px'}}>No tasks to display for this category.</td></tr>
                                                     )}
                                                 </tbody>
                                             </table>
@@ -2351,7 +2384,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                         <h3>{tableTitle} ({filteredPendingTasks.length})</h3>
                                         {selectedTaskIds.size > 0 && (<button className="btn btn-primary btn-submit-selected" onClick={handleMarkMultipleDone} disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : `Submit Selected (${selectedTaskIds.size})`}</button>)}
                                     </div>
-                                    <div className="table-container" style={{maxHeight: '400px'}}>
+                                    <div className="table-container" style={{maxHeight: '400px', overflowX: 'auto'}}>
                                         <table className="pending-tasks-table">
                                             <thead><tr><th className="checkbox-cell"><input type="checkbox" onChange={handleToggleSelectAll} checked={isAllSelected} disabled={selectableTasks.length === 0 || isSubmitting} aria-label="Select all tasks" /></th><th>Task ID</th><th>System Type</th><th>TASK</th><th>Planned</th><th>DOER NAME</th><th></th></tr></thead>
                                             <tbody>
