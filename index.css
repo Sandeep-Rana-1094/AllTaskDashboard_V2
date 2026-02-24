@@ -548,6 +548,65 @@ textarea {
 .dashboard-tasks-table th:nth-child(9) { width: 6%; }  /* For PC */
 .dashboard-tasks-table th:nth-child(10) { width: 10%; } /* System Type */
 
+.employee-pending-tasks-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .header-left,
+    .header-controls,
+    .header-user-info {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+    }
+
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .dashboard-card {
+        padding: 16px;
+    }
+
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .table-container {
+        overflow-x: auto;
+    }
+
+    .checklist-table,
+    .pending-tasks-table {
+        min-width: 600px; /* Or a suitable width to prevent cramping */
+    }
+
+    .modal-content {
+        width: 95%;
+        padding: 20px;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .delegation-modal-content {
+        height: 85vh;
+    }
+}
+
+
+
+
+
 .dashboard-tasks-table td a {
     color: var(--primary-color-start);
     text-decoration: none;
