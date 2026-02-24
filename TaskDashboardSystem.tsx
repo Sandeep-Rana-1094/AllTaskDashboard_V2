@@ -2149,10 +2149,28 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                             <StatCard title="Overdue Tasks" value={misEmployeeViewData.kpis.overdueTasks.length} icon={<OverdueIcon />} className="stat-card--overdue" />
                                             <StatCard title="Tasks Due Today" value={misEmployeeViewData.kpis.dueTodayTasks.length} icon={<TodayIcon />} className="stat-card--today" />
                                         </div>
-                                        <div className="dashboard-card pending-tasks-card">
+                                        <style>{`
+                                        .employee-pending-tasks-table-forced {
+                                            table-layout: fixed !important;
+                                            width: 100% !important;
+                                        }
+                                        .employee-pending-tasks-table-forced th,
+                                        .employee-pending-tasks-table-forced td {
+                                            overflow: hidden !important;
+                                            text-overflow: ellipsis !important;
+                                            white-space: nowrap !important;
+                                        }
+                                        .employee-pending-tasks-table-forced th:nth-child(1) { width: 12% !important; }
+                                        .employee-pending-tasks-table-forced th:nth-child(2) { width: 18% !important; }
+                                        .employee-pending-tasks-table-forced th:nth-child(3) { width: 35% !important; }
+                                        .employee-pending-tasks-table-forced th:nth-child(4) { width: 12% !important; }
+                                        .employee-pending-tasks-table-forced th:nth-child(5) { width: 13% !important; }
+                                        .employee-pending-tasks-table-forced th:nth-child(6) { width: 10% !important; }
+                                    `}</style>
+                                    <div className="dashboard-card pending-tasks-card">
                                             <div className="card-header"><h3>{selectedMisEmployeeName}'s Pending Tasks ({misEmployeeViewData.kpis.pendingTasks.length})</h3></div>
                                             <div className="table-container" style={{maxHeight: '400px'}}>
-                                                <table className="pending-tasks-table">
+                                                <table className="pending-tasks-table employee-pending-tasks-table employee-pending-tasks-table-forced">
                                                     <thead><tr><th>Task ID</th><th>System Type</th><th>TASK</th><th>Planned</th><th>DOER NAME</th><th></th></tr></thead>
                                                     <tbody>
                                                         {misEmployeeViewData.kpis.pendingTasks.length > 0 ? misEmployeeViewData.kpis.pendingTasks.map(task => {
