@@ -170,6 +170,7 @@ interface TaskDashboardSystemProps {
     people: Person[];
     attendanceData: AttendanceData[];
     dailyAttendanceData: DailyAttendance[];
+    currentLeaveData: DailyAttendance[];
     holidays: Holiday[];
     taskHistory: TaskHistory[];
 }
@@ -758,6 +759,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     people,
     attendanceData,
     dailyAttendanceData,
+    currentLeaveData,
     holidays,
     taskHistory,
 }) => {
@@ -1173,7 +1175,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [userTasks, holidays, monthlyNbdCounts]);
     
     // --- Employee MIS Calculations ---
-    const { onTrackEmployees, negativeScoreEmployees } = useMemo(() => {
+    const { onTrackEmployees, negativeScoreEmployees, onLeaveEmployees } = useMemo(() => {
         const { start: prevWeekStart, end: prevWeekEnd } = getPreviousWeekRange();
         
         const prevWeekTasks = misWeekdayTasks.filter(task => isTaskRelevantForPeriod(task, prevWeekStart, prevWeekEnd));
@@ -1191,12 +1193,28 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         
         const onTrack: Person[] = [];
         const negativeScore: Person[] = [];
+        const onLeave: Person[] = [];
+
+        // Identify who is on leave based on currentLeaveData (from Attendance sheet I:K)
+        const currentLeaveNames = new Set(currentLeaveData.map(l => l.name.toLowerCase().trim()));
+        
+        people.forEach(person => {
+            const personNameLower = person.name.toLowerCase().trim();
+            if (currentLeaveNames.has(personNameLower)) {
+                onLeave.push(person);
+            }
+        });
 
         for (const name in tasksByUserName) {
             const personInfo = people.find(p => p.name === name);
             if (!personInfo) {
-                continue; // Skip employees not in the active 'people' list (i.e., they have "Left")
+                continue; // Skip employees not in the active 'people' list
             }
+
+            // If they are already in the "On Leave" list, we might still want to see their task performance
+            // but usually highlights are mutually exclusive for clarity. 
+            // However, the user asked for a separate table, so let's keep them separate if they had leave.
+            if (onLeave.some(p => p.name === personInfo.name)) continue;
 
             const userTasks = tasksByUserName[name];
             if (userTasks.length === 0) continue;
@@ -1233,9 +1251,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         
         onTrack.sort((a, b) => a.name.localeCompare(b.name));
         negativeScore.sort((a, b) => a.name.localeCompare(b.name));
+        onLeave.sort((a, b) => a.name.localeCompare(b.name));
         
-        return { onTrackEmployees: onTrack, negativeScoreEmployees: negativeScore };
-    }, [misWeekdayTasks, people]);
+        return { onTrackEmployees: onTrack, negativeScoreEmployees: negativeScore, onLeaveEmployees: onLeave };
+    }, [misWeekdayTasks, people, currentLeaveData]);
 
     const misReportData = useMemo(() => {
         if (!selectedMisEmployeeName) return null;
@@ -1585,10 +1604,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
 
     const allEmployees = useMemo(() => {
-        const combined = [...negativeScoreEmployees, ...onTrackEmployees];
+        const combined = [...negativeScoreEmployees, ...onTrackEmployees, ...onLeaveEmployees];
         const names = new Set(combined.map(person => person.name.trim()).filter(Boolean));
         return Array.from(names).sort();
-    }, [negativeScoreEmployees, onTrackEmployees]);
+    }, [negativeScoreEmployees, onTrackEmployees, onLeaveEmployees]);
 
     const { filteredPendingTasks, tableTitle } = useMemo(() => {
         let tasksToFilter: DashboardTask[];
@@ -1906,24 +1925,34 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     <h3 className="mis-view-title">Last Week's Team Highlights</h3>
                     {misTasksError && <div className="error-message" style={{marginBottom: '24px'}}>{misTasksError}</div>}
                     <div className="highlights-grid">
-                        <div className="dashboard-card highlight-card">
+                        <div className="dashboard-card highlight-card negative">
                             <div className="card-title-section">
                                 <div className="icon-wrapper negative"><NegativeIcon /></div>
                                 <h4 className="card-title negative">Negative score</h4>
-                                <span className="count-badge negative">{negativeScoreEmployees.length}</span>
+                                <span className="count-badge negative">{negativeScoreEmployees.length} Employees</span>
                             </div>
                             <div className="employee-tags">
                                 {negativeScoreEmployees.map(person => <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>{person.name}</button>)}
                             </div>
                         </div>
-                        <div className="dashboard-card highlight-card">
+                        <div className="dashboard-card highlight-card on-track">
                             <div className="card-title-section">
                                 <div className="icon-wrapper on-track"><OnTrackIcon /></div>
                                 <h4 className="card-title on-track">On Track</h4>
-                                <span className="count-badge on-track">{onTrackEmployees.length}</span>
+                                <span className="count-badge on-track">{onTrackEmployees.length} Employees</span>
                             </div>
                             <div className="employee-tags">
                                 {onTrackEmployees.map(person => <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>{person.name}</button>)}
+                            </div>
+                        </div>
+                        <div className="dashboard-card highlight-card on-leave">
+                            <div className="card-title-section">
+                                <div className="icon-wrapper on-leave"><TodayIcon /></div>
+                                <h4 className="card-title on-leave">Today's On Leave</h4>
+                                <span className="count-badge on-leave">{onLeaveEmployees.length} Employees</span>
+                            </div>
+                            <div className="employee-tags">
+                                {onLeaveEmployees.map(person => <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>{person.name}</button>)}
                             </div>
                         </div>
                     </div>
