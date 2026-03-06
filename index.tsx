@@ -266,6 +266,7 @@ const App = () => {
     const [allDashboardTasks, setAllDashboardTasks] = useState<DashboardTask[]>([]);
     const [attendanceData, setAttendanceData] = useState<AttendanceData[]>([]);
     const [dailyAttendanceData, setDailyAttendanceData] = useState<DailyAttendance[]>([]);
+    const [currentLeaveData, setCurrentLeaveData] = useState<DailyAttendance[]>([]);
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
 
@@ -278,6 +279,7 @@ const App = () => {
     const [allDashboardTasksError, setAllDashboardTasksError] = useState<string | null>(null);
     const [attendanceError, setAttendanceError] = useState<string | null>(null);
     const [dailyAttendanceError, setDailyAttendanceError] = useState<string | null>(null);
+    const [currentLeaveError, setCurrentLeaveError] = useState<string | null>(null);
     const [holidaysError, setHolidaysError] = useState<string | null>(null);
     const [taskHistoryError, setTaskHistoryError] = useState<string | null>(null);
 
@@ -313,6 +315,7 @@ const App = () => {
         setAllDashboardTasksError(null);
         setAttendanceError(null);
         setDailyAttendanceError(null);
+        setCurrentLeaveError(null);
         setHolidaysError(null);
         setTaskHistoryError(null);
 
@@ -328,6 +331,7 @@ const App = () => {
         const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=Working%20Task%20Form`;
         const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT J, U WHERE U IS NOT NULL')}`;
         const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT P, Q, R, U WHERE R IS NOT NULL AND P IS NOT NULL')}`;
+        const currentLeaveUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=I:K`;
         const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT S, T WHERE T IS NOT NULL')}`;
         const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
 
@@ -562,6 +566,22 @@ const App = () => {
                  setDailyAttendanceError('Failed to load Daily Attendance. Please ensure columns P (Date), Q (Status), R (Name), and U (Email) in the "Leaves" sheet are correctly formatted and the sheet is public.');
             }
             await sleep(250);
+
+            // 7.5 Fetch Current Leave Data (from Attendance sheet I:K)
+            try {
+                await fetchWithHandling(currentLeaveUrl, (csvText) => {
+                    const parsedData: DailyAttendance[] = robustCsvParser(csvText).map(fields => ({
+                        name: (fields[0] || '').trim(),
+                        date: (fields[1] || '').trim(),
+                        status: (fields[2] || '').trim(),
+                    })).filter(item => item.name && item.name.toLowerCase() !== 'name' && item.status.toLowerCase() === 'leave');
+                    setCurrentLeaveData(parsedData);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Current Leave):", err);
+                setCurrentLeaveError('Failed to load Current Leave data from Attendance sheet.');
+            }
+            await sleep(250);
             
             // 8. Fetch Holidays
             try {
@@ -719,6 +739,7 @@ const App = () => {
                             people={people}
                             attendanceData={attendanceData}
                             dailyAttendanceData={dailyAttendanceData}
+                            currentLeaveData={currentLeaveData}
                             holidays={holidays}
                             taskHistory={taskHistory}
                         />
@@ -765,6 +786,7 @@ const App = () => {
                             people={people}
                             attendanceData={attendanceData}
                             dailyAttendanceData={dailyAttendanceData}
+                            currentLeaveData={currentLeaveData}
                             holidays={holidays}
                             taskHistory={taskHistory}
                         />
