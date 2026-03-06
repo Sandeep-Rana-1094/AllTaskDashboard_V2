@@ -1568,6 +1568,18 @@ textarea {
     gap: 24px;
     margin-bottom: 24px;
 }
+.highlight-card {
+    border-top: 4px solid var(--border-color);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.highlight-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+.highlight-card.negative { border-top-color: var(--danger-color); }
+.highlight-card.on-track { border-top-color: var(--success-color); }
+.highlight-card.on-leave { border-top-color: var(--info-color); }
+
 .highlight-card .card-title-section {
     display: flex;
     align-items: center;
@@ -1585,6 +1597,7 @@ textarea {
 }
 .highlight-card .icon-wrapper.negative { background-color: var(--danger-color); }
 .highlight-card .icon-wrapper.on-track { background-color: var(--success-color); }
+.highlight-card .icon-wrapper.on-leave { background-color: var(--info-color); }
 
 .highlight-card .card-title {
     font-size: 1rem;
@@ -1592,16 +1605,19 @@ textarea {
 }
 .highlight-card .card-title.negative { color: var(--danger-color); }
 .highlight-card .card-title.on-track { color: var(--success-color); }
+.highlight-card .card-title.on-leave { color: var(--info-color); }
 
 .highlight-card .count-badge {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 700;
-    padding: 2px 8px;
+    padding: 4px 12px;
     border-radius: 999px;
     color: white;
+    white-space: nowrap;
 }
 .highlight-card .count-badge.negative { background-color: var(--danger-color); }
 .highlight-card .count-badge.on-track { background-color: var(--success-color); }
+.highlight-card .count-badge.on-leave { background-color: var(--info-color); }
 
 .employee-tags {
     display: flex;
