@@ -1211,11 +1211,6 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 continue; // Skip employees not in the active 'people' list
             }
 
-            // If they are already in the "On Leave" list, we might still want to see their task performance
-            // but usually highlights are mutually exclusive for clarity. 
-            // However, the user asked for a separate table, so let's keep them separate if they had leave.
-            if (onLeave.some(p => p.name === personInfo.name)) continue;
-
             const userTasks = tasksByUserName[name];
             if (userTasks.length === 0) continue;
 
