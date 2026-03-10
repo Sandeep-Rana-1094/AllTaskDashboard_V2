@@ -23,6 +23,13 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Allow embedding in Google Sites
+  app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://sites.google.com https://*.google.com");
+    res.removeHeader('X-Frame-Options');
+    next();
+  });
+
   function getAllUsers() {
     const liveEmails = new Set(Array.from(clients.values()).map(c => c.email));
     return Array.from(dailyLogins.entries()).map(([email, info]) => ({
