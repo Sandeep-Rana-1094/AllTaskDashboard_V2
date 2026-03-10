@@ -292,6 +292,81 @@ const AttendanceAlert: React.FC<{
     );
 };
 
+const LiveUsersModal: React.FC<{
+    users: { email: string; role: string; isLive: boolean; lastSeen?: string }[];
+    onClose: () => void;
+    onRefresh: () => void;
+}> = ({ users, onClose, onRefresh }) => {
+    const liveCount = users.filter(u => u.isLive).length;
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+                <div className="delegation-modal-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <h2 id="live-users-title" style={{ margin: 0 }}>Today's Logins ({users.length})</h2>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onRefresh(); }} 
+                            className="btn-refresh" 
+                            style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                cursor: 'pointer', 
+                                color: '#6b7280', 
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center'
+                            }}
+                            title="Refresh list"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                        </button>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#6b7280' }}>({liveCount} Live)</div>
+                    <button onClick={onClose} className="btn-close-modal" aria-label="Close modal">&times;</button>
+                </div>
+                <div className="history-modal-body" style={{ maxHeight: '60vh' }}>
+                    {users.length > 0 ? (
+                        <ul className="live-users-list" style={{ listStyleType: 'none', padding: 0, margin: 0 }}>
+                            {users.sort((a, b) => (a.isLive === b.isLive ? 0 : a.isLive ? -1 : 1)).map((user, index) => (
+                                <li key={index} style={{ padding: '12px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: user.isLive ? 1 : 0.7 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: user.isLive ? '#22c55e' : '#9ca3af', boxShadow: user.isLive ? '0 0 8px #22c55e' : 'none' }}></div>
+                                        <div>
+                                            <div style={{ fontWeight: '500', fontSize: '0.95rem' }}>{getUserNameFromEmail(user.email)}</div>
+                                            <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{user.email}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            padding: '2px 8px', 
+                                            borderRadius: '12px', 
+                                            background: (user.role === 'Admin' || user.role === 'Super Admin') ? '#fee2e2' : '#e0f2fe',
+                                            color: (user.role === 'Admin' || user.role === 'Super Admin') ? '#dc2626' : '#0369a1',
+                                            fontWeight: '600',
+                                            display: 'block',
+                                            marginBottom: '4px'
+                                        }}>
+                                            {user.role}
+                                        </span>
+                                        {!user.isLive && user.lastSeen && (
+                                            <div style={{ fontSize: '0.65rem', color: '#9ca3af' }}>
+                                                Last seen: {new Date(user.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="no-history-message" style={{ padding: '20px 0', textAlign: 'center' }}>No users have logged in today.</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const AttachmentModal: React.FC<{
     task: DashboardTask | null; onClose: () => void;
     onSubmit: (file: File) => void; isSubmitting: boolean;
@@ -814,7 +889,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     taskHistory,
     attendanceCheckData,
 }) => {
-    const isAdmin = authenticatedUser?.role === 'Admin';
+    const isSuperAdmin = authenticatedUser?.role === 'Super Admin';
+    const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
     const [dashboardMode, setDashboardMode] = useState<'myDashboard' | 'employeeMIS'>('myDashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'overdue' | 'today'>('all');
@@ -827,6 +903,77 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [expandedKpi, setExpandedKpi] = useState<'notDone' | 'notOnTime' | null>(null);
     const [showAttendanceAlert, setShowAttendanceAlert] = useState(false);
     const [hasShownAttendanceAlert, setHasShownAttendanceAlert] = useState(false);
+    const [liveUsers, setLiveUsers] = useState<{ email: string; role: string; isLive: boolean; lastSeen?: string }[]>([]);
+    const [showLiveUsersModal, setShowLiveUsersModal] = useState(false);
+    const wsRef = useRef<WebSocket | null>(null);
+
+    useEffect(() => {
+        if (!authenticatedUser) return;
+
+        // 1. Initial HTTP Check-in and State Fetch
+        // This ensures tracking works even if WebSockets are blocked in an iframe
+        const initPresence = async () => {
+            try {
+                console.log('Attempting presence check-in for:', authenticatedUser.mailId);
+                const checkInRes = await fetch('/api/presence/check-in', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: authenticatedUser.mailId,
+                        role: authenticatedUser.role
+                    })
+                });
+                
+                if (checkInRes.ok) {
+                    console.log('Presence check-in successful');
+                } else {
+                    console.warn('Presence check-in failed with status:', checkInRes.status);
+                }
+
+                const res = await fetch('/api/presence/state');
+                const data = await res.json();
+                console.log('Current presence state:', data);
+                setLiveUsers(data.dailyUsers || data.liveUsers);
+            } catch (e) {
+                console.error('Failed to initialize presence via HTTP', e);
+            }
+        };
+
+        initPresence();
+        const checkInInterval = setInterval(initPresence, 60000); // Check-in every minute
+
+        // 2. WebSocket for Real-time Updates
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        const socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            socket.send(JSON.stringify({
+                type: 'identify',
+                email: authenticatedUser.mailId,
+                role: authenticatedUser.role
+            }));
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'presence') {
+                    // Use dailyUsers if available, otherwise fallback to liveUsers
+                    setLiveUsers(data.dailyUsers || data.liveUsers);
+                }
+            } catch (e) {
+                console.error('Failed to parse presence message', e);
+            }
+        };
+
+        wsRef.current = socket;
+
+        return () => {
+            clearInterval(checkInInterval);
+            socket.close();
+        };
+    }, [authenticatedUser]);
 
     // --- New State for Calendar View ---
     const [currentView, setCurrentView] = useState<'stats' | 'calendar'>('stats');
@@ -2485,6 +2632,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                     </div>
                                 )}
                                 <div className="stats-grid">
+                                    {isSuperAdmin && (
+                                        <StatCard
+                                            title="Today's Logins"
+                                            value={liveUsers.length}
+                                            icon={<UserIcon />}
+                                            className="stat-card--live stat-card-clickable"
+                                            onClick={() => setShowLiveUsersModal(true)}
+                                        />
+                                    )}
                                     <StatCard title="My Pending Tasks" value={pendingTasks.length} icon={<PendingIcon />} className={`stat-card--pending stat-card-clickable ${filterMode === 'all' ? 'active' : ''}`} onClick={() => setFilterMode('all')} ariaPressed={filterMode === 'all'} />
                                     <StatCard title="Overdue Tasks" value={overdueTasks.length} icon={<OverdueIcon />} className={`stat-card--overdue stat-card-clickable ${filterMode === 'overdue' ? 'active' : ''}`} onClick={() => setFilterMode('overdue')} ariaPressed={filterMode === 'overdue'} />
                                     <StatCard title="Tasks Due Today" value={dueTodayTasks.length} icon={<TodayIcon />} className={`stat-card--today stat-card-clickable ${filterMode === 'today' ? 'active' : ''}`} onClick={() => setFilterMode('today')} ariaPressed={filterMode === 'today'} />
@@ -2570,6 +2726,21 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 />
             )}
             <AttendanceDetailModal data={attendanceModalData} onClose={() => setAttendanceModalData(null)} />
+            {showLiveUsersModal && (
+                <LiveUsersModal 
+                    users={liveUsers} 
+                    onClose={() => setShowLiveUsersModal(false)} 
+                    onRefresh={async () => {
+                        try {
+                            const res = await fetch('/api/presence/state');
+                            const data = await res.json();
+                            setLiveUsers(data.dailyUsers || data.liveUsers);
+                        } catch (e) {
+                            console.error('Failed to refresh presence', e);
+                        }
+                    }}
+                />
+            )}
             {showAttendanceAlert && myAttendanceCheck && (
                 <AttendanceAlert 
                     attendanceCheck={myAttendanceCheck} 
