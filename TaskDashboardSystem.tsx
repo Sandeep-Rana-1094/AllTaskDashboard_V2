@@ -910,11 +910,18 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     // Derived state to ensure current user is always included in the logins list
     // and also include historical logins from the Google Sheet for cross-server visibility
     const allLogins = useMemo(() => {
-        const todayStr = new Date().toLocaleDateString();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
         
         // 1. Get logins from the History sheet (persistent across servers)
         const historicalLogins = taskHistory
-            .filter(h => h.systemType === 'Login' && new Date(h.timestamp).toLocaleDateString() === todayStr)
+            .filter(h => {
+                if (h.systemType !== 'Login') return false;
+                const hDate = parseDate(h.timestamp);
+                if (!hDate) return false;
+                hDate.setHours(0, 0, 0, 0);
+                return hDate.getTime() === today.getTime();
+            })
             .map(h => ({
                 email: h.changedBy,
                 role: 'User', // Default role if not specified in history
@@ -958,8 +965,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         ];
     }, [liveUsers, authenticatedUser, taskHistory]);
 
+    const hasRecordedLogin = useRef(false);
+
     useEffect(() => {
-        if (!authenticatedUser) return;
+        if (!authenticatedUser || hasRecordedLogin.current) return;
+        hasRecordedLogin.current = true;
 
         // 1. Initial HTTP Check-in and State Fetch
         // This ensures tracking works even if WebSockets are blocked in an iframe
