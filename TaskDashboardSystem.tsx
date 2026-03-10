@@ -907,6 +907,24 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [showLiveUsersModal, setShowLiveUsersModal] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
+    // Derived state to ensure current user is always included in the logins list
+    const allLogins = useMemo(() => {
+        if (!authenticatedUser) return liveUsers;
+        const currentEmail = authenticatedUser.mailId.toLowerCase();
+        const exists = liveUsers.find(u => (u.email || '').toLowerCase() === currentEmail);
+        if (exists) return liveUsers;
+        
+        return [
+            ...liveUsers,
+            {
+                email: authenticatedUser.mailId,
+                role: authenticatedUser.role,
+                isLive: true,
+                lastSeen: new Date().toISOString()
+            }
+        ];
+    }, [liveUsers, authenticatedUser]);
+
     useEffect(() => {
         if (!authenticatedUser) return;
 
@@ -933,18 +951,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 const res = await fetch('/api/presence/state');
                 const data = await res.json();
                 console.log('Current presence state:', data);
-                let users = data.dailyUsers || data.liveUsers || [];
-                
-                // Ensure current user is always in the list locally even if server state reset
-                if (authenticatedUser && !users.find((u: any) => u.email === authenticatedUser.mailId)) {
-                    users.push({
-                        email: authenticatedUser.mailId,
-                        role: authenticatedUser.role,
-                        isLive: true,
-                        lastSeen: new Date().toISOString()
-                    });
-                }
-                setLiveUsers(users);
+                setLiveUsers(data.dailyUsers || data.liveUsers || []);
             } catch (e) {
                 console.error('Failed to initialize presence via HTTP', e);
             }
@@ -970,17 +977,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'presence') {
-                    let users = data.dailyUsers || data.liveUsers || [];
-                    // Ensure current user is always in the list locally
-                    if (authenticatedUser && !users.find((u: any) => u.email === authenticatedUser.mailId)) {
-                        users.push({
-                            email: authenticatedUser.mailId,
-                            role: authenticatedUser.role,
-                            isLive: true,
-                            lastSeen: new Date().toISOString()
-                        });
-                    }
-                    setLiveUsers(users);
+                    setLiveUsers(data.dailyUsers || data.liveUsers || []);
                 }
             } catch (e) {
                 console.error('Failed to parse presence message', e);
@@ -2655,7 +2652,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                     {isSuperAdmin && (
                                         <StatCard
                                             title="Today's Logins"
-                                            value={liveUsers.length}
+                                            value={allLogins.length}
                                             icon={<UserIcon />}
                                             className="stat-card--live stat-card-clickable"
                                             onClick={() => setShowLiveUsersModal(true)}
@@ -2748,23 +2745,13 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             <AttendanceDetailModal data={attendanceModalData} onClose={() => setAttendanceModalData(null)} />
             {showLiveUsersModal && (
                 <LiveUsersModal 
-                    users={liveUsers} 
+                    users={allLogins} 
                     onClose={() => setShowLiveUsersModal(false)} 
                     onRefresh={async () => {
                         try {
                             const res = await fetch('/api/presence/state');
                             const data = await res.json();
-                            let users = data.dailyUsers || data.liveUsers || [];
-                            // Ensure current user is always in the list locally
-                            if (authenticatedUser && !users.find((u: any) => u.email === authenticatedUser.mailId)) {
-                                users.push({
-                                    email: authenticatedUser.mailId,
-                                    role: authenticatedUser.role,
-                                    isLive: true,
-                                    lastSeen: new Date().toISOString()
-                                });
-                            }
-                            setLiveUsers(users);
+                            setLiveUsers(data.dailyUsers || data.liveUsers || []);
                         } catch (e) {
                             console.error('Failed to refresh presence', e);
                         }
