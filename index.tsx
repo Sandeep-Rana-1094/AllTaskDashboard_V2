@@ -147,35 +147,35 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
                 }
             });
 
-            const lowerCaseEmail = email.toLowerCase();
-            
-            // --- LOGIN LOGIC: Manager > Admin > User ---
+        const lowerCaseEmail = email.toLowerCase().trim();
+        
+        // --- LOGIN LOGIC: Manager > Admin > User ---
 
-            // 1. Check if the user is a Manager
-            if (teamMap.has(lowerCaseEmail)) {
-                onLoginSuccess({
-                    mailId: email,
-                    role: 'Manager',
-                    teamEmails: teamMap.get(lowerCaseEmail) || []
-                });
-                return;
-            }
+        // 1. Check if the user is a Manager
+        if (teamMap.has(lowerCaseEmail)) {
+            onLoginSuccess({
+                mailId: lowerCaseEmail,
+                role: 'Manager',
+                teamEmails: teamMap.get(lowerCaseEmail) || []
+            });
+            return;
+        }
 
-            // 2. Check if the user is in the auth list (Admin, Super Admin or User)
-            const foundUserInUsersSheet = users.find(u => u.mailId.toLowerCase() === lowerCaseEmail);
-            if (foundUserInUsersSheet) {
-                if (foundUserInUsersSheet.role === 'Admin' || foundUserInUsersSheet.role === 'Super Admin') {
-                    // Admin or Super Admin found, ask for password
-                    setAdminUser(foundUserInUsersSheet);
-                    setStep('password');
-                } else {
-                    // Any other role in Users sheet is logged in without password
-                    onLoginSuccess({ mailId: foundUserInUsersSheet.mailId, role: (foundUserInUsersSheet.role as UserRole) || 'User' });
-                }
+        // 2. Check if the user is in the auth list (Admin, Super Admin or User)
+        const foundUserInUsersSheet = users.find(u => u.mailId.toLowerCase().trim() === lowerCaseEmail);
+        if (foundUserInUsersSheet) {
+            if (foundUserInUsersSheet.role === 'Admin' || foundUserInUsersSheet.role === 'Super Admin') {
+                // Admin or Super Admin found, ask for password
+                setAdminUser(foundUserInUsersSheet);
+                setStep('password');
             } else {
-                // 3. Not found anywhere, treat as a new standard user.
-                onLoginSuccess({ mailId: email, role: 'User' });
+                // Any other role in Users sheet is logged in without password
+                onLoginSuccess({ mailId: foundUserInUsersSheet.mailId.toLowerCase().trim(), role: (foundUserInUsersSheet.role as UserRole) || 'User' });
             }
+        } else {
+            // 3. Not found anywhere, treat as a new standard user.
+            onLoginSuccess({ mailId: lowerCaseEmail, role: 'User' });
+        }
         } catch (err: any) {
             console.error('Login error:', err);
             setError(err.message || 'An error occurred during login.');
@@ -667,35 +667,34 @@ const App = () => {
         }
         
         try {
+            console.log('[postToGoogleSheet] Sending request:', data.action, 'Sheet:', data.sheetName);
             const response = await fetch(SCRIPT_URL, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'text/plain',
                 },
                 body: JSON.stringify(data),
-                // mode: 'no-cors' is removed to allow reading the response
             });
 
             if (!response.ok) {
-                // Try to get more info from the response body if it's not OK
                 const errorText = await response.text();
-                throw new Error(`Network error: ${response.status} ${response.statusText}. Response: ${errorText}`);
+                console.error('[postToGoogleSheet] HTTP Error:', response.status, errorText);
+                throw new Error(`Network error: ${response.status} ${response.statusText}`);
             }
             
             const result = await response.json();
+            console.log('[postToGoogleSheet] Response received:', result.status);
 
             if (result.status === 'error') {
-                // This catches errors reported by our script's JSON response
+                console.error('[postToGoogleSheet] Script Error:', result.message);
                 throw new Error(result.message || 'An unknown script error occurred.');
             }
             
             return result;
 
         } catch (error) {
-            console.error("Error communicating with Google Sheet:", error);
-            // Re-throw the error so the calling function's catch block can handle it
+            console.error("[postToGoogleSheet] Exception:", error);
             if (error instanceof Error) {
-                 // Just rethrow the specific error
                  throw error;
             }
             throw new Error("An unknown network or parsing error occurred.");
