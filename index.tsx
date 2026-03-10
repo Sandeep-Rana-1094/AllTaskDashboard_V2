@@ -4,7 +4,7 @@ import { ChecklistSystem } from './ChecklistSystem.tsx';
 import { DelegationSystem } from './DelegationSystem.tsx';
 import { TaskDashboardSystem } from './TaskDashboardSystem.tsx';
 import { 
-    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole
+    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole, AttendanceCheck
 } from './types';
 import { useLocalStorage, robustCsvParser } from './utils';
 
@@ -269,6 +269,7 @@ const App = () => {
     const [currentLeaveData, setCurrentLeaveData] = useState<DailyAttendance[]>([]);
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
+    const [attendanceCheckData, setAttendanceCheckData] = useState<AttendanceCheck[]>([]);
 
     // Loading and Error State
     const [isLoadingPeople, setIsLoadingPeople] = useState(true);
@@ -282,6 +283,7 @@ const App = () => {
     const [currentLeaveError, setCurrentLeaveError] = useState<string | null>(null);
     const [holidaysError, setHolidaysError] = useState<string | null>(null);
     const [taskHistoryError, setTaskHistoryError] = useState<string | null>(null);
+    const [attendanceCheckError, setAttendanceCheckError] = useState<string | null>(null);
 
     // General state
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -334,6 +336,7 @@ const App = () => {
         const currentLeaveUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=I:K`;
         const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT S, T WHERE T IS NOT NULL')}`;
         const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
+        const attendanceCheckUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=M:S`;
 
         const fetchWithHandling = async (url: string, processor: (csv: string) => void) => {
             const response = await fetch(url);
@@ -611,6 +614,24 @@ const App = () => {
                  console.error("Data fetch error (History):", err);
                  setTaskHistoryError('Failed to load Task History. Please ensure the "History" sheet in the main Google Sheet is public and published to the web.');
             }
+            await sleep(250);
+
+            // 10. Fetch Attendance Check
+            try {
+                await fetchWithHandling(attendanceCheckUrl, (csvText) => {
+                    const parsedData: AttendanceCheck[] = robustCsvParser(csvText).map(fields => ({
+                        name: (fields[0] || '').trim(),
+                        link: (fields[3] || '').trim(),
+                        statusQ: (fields[4] || '').trim(),
+                        statusR: (fields[5] || '').trim(),
+                        gmail: (fields[6] || '').trim().toLowerCase(),
+                    })).filter(item => item.name && item.gmail);
+                    setAttendanceCheckData(parsedData);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Attendance Check):", err);
+                setAttendanceCheckError('Failed to load Attendance Check data from Attendance sheet.');
+            }
 
         } catch (err) {
             console.error("An unexpected error occurred during data fetch:", err);
@@ -742,6 +763,7 @@ const App = () => {
                             currentLeaveData={currentLeaveData}
                             holidays={holidays}
                             taskHistory={taskHistory}
+                            attendanceCheckData={attendanceCheckData}
                         />
                     ) : (isAdmin && mode === 'delegation') ? (
                         <DelegationSystem 
@@ -789,6 +811,7 @@ const App = () => {
                             currentLeaveData={currentLeaveData}
                             holidays={holidays}
                             taskHistory={taskHistory}
+                            attendanceCheckData={attendanceCheckData}
                         />
                     )}
                 </main>
