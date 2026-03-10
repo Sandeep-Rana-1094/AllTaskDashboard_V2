@@ -16,6 +16,8 @@ async function startServer() {
   const PORT = 3000;
 
   // Presence tracking
+  // NOTE: In-memory state like Maps will be reset on Vercel/serverless environments.
+  // For persistent presence tracking across instances, use a database (e.g., Redis, MongoDB).
   const clients = new Map<WebSocket, { email: string; role: string }>();
   const dailyLogins = new Map<string, { role: string; lastSeen: string }>();
 
