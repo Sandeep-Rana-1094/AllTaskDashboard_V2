@@ -908,14 +908,47 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const wsRef = useRef<WebSocket | null>(null);
 
     // Derived state to ensure current user is always included in the logins list
+    // and also include historical logins from the Google Sheet for cross-server visibility
     const allLogins = useMemo(() => {
-        if (!authenticatedUser) return liveUsers;
+        const todayStr = new Date().toLocaleDateString();
+        
+        // 1. Get logins from the History sheet (persistent across servers)
+        const historicalLogins = taskHistory
+            .filter(h => h.systemType === 'Login' && new Date(h.timestamp).toLocaleDateString() === todayStr)
+            .map(h => ({
+                email: h.changedBy,
+                role: 'User', // Default role if not specified in history
+                isLive: false,
+                lastSeen: h.timestamp
+            }));
+
+        // 2. Combine with live users from the current server
+        const combined = [...liveUsers];
+        
+        // Add historical ones if they aren't already in the live list
+        historicalLogins.forEach(hist => {
+            const exists = combined.find(u => (u.email || '').toLowerCase() === (hist.email || '').toLowerCase());
+            if (!exists) {
+                combined.push(hist);
+            } else if (!exists.isLive) {
+                // If exists but not live, update lastSeen if history is newer
+                if (new Date(hist.lastSeen).getTime() > new Date(exists.lastSeen || 0).getTime()) {
+                    exists.lastSeen = hist.lastSeen;
+                }
+            }
+        });
+
+        if (!authenticatedUser) return combined;
+        
         const currentEmail = authenticatedUser.mailId.toLowerCase();
-        const exists = liveUsers.find(u => (u.email || '').toLowerCase() === currentEmail);
-        if (exists) return liveUsers;
+        const exists = combined.find(u => (u.email || '').toLowerCase() === currentEmail);
+        if (exists) {
+            exists.isLive = true; // Ensure current user is always shown as live
+            return combined;
+        }
         
         return [
-            ...liveUsers,
+            ...combined,
             {
                 email: authenticatedUser.mailId,
                 role: authenticatedUser.role,
@@ -923,7 +956,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 lastSeen: new Date().toISOString()
             }
         ];
-    }, [liveUsers, authenticatedUser]);
+    }, [liveUsers, authenticatedUser, taskHistory]);
 
     useEffect(() => {
         if (!authenticatedUser) return;
@@ -933,6 +966,31 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const initPresence = async () => {
             try {
                 console.log('Attempting presence check-in for:', authenticatedUser.mailId);
+                
+                // Record login in Google Sheet for cross-server persistence
+                // We use 'Done Task Status' as a carrier sheet because 'History' direct write is not configured in GAS.
+                // The GAS script will automatically append the historyRecord to the History sheet.
+                postToGoogleSheet({
+                    action: 'create',
+                    sheetName: 'Done Task Status',
+                    newData: {
+                        'Task ID': 'LOGIN-' + Date.now(),
+                        'System Type': 'Login',
+                        'TASK': 'User Login',
+                        'Planned': new Date().toLocaleDateString('en-GB'),
+                        'Timestamp': new Date().toLocaleDateString('en-GB'),
+                        'DOER NAME': authenticatedUser.mailId,
+                        'Marked Done By': authenticatedUser.mailId,
+                        'Login ID': authenticatedUser.mailId
+                    },
+                    historyRecord: {
+                        systemType: 'Login',
+                        task: 'User Login',
+                        changedBy: authenticatedUser.mailId,
+                        change: `Logged in from ${window.location.hostname}`
+                    }
+                }).catch(err => console.error('Failed to record login in Google Sheet:', err));
+
                 const checkInRes = await fetch('/api/presence/check-in', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2749,9 +2807,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     onClose={() => setShowLiveUsersModal(false)} 
                     onRefresh={async () => {
                         try {
+                            // 1. Refresh local server presence
                             const res = await fetch('/api/presence/state');
                             const data = await res.json();
                             setLiveUsers(data.dailyUsers || data.liveUsers || []);
+                            
+                            // 2. Refresh Google Sheet data (to see logins from other servers)
+                            if (fetchData) {
+                                await fetchData(false);
+                            }
                         } catch (e) {
                             console.error('Failed to refresh presence', e);
                         }
