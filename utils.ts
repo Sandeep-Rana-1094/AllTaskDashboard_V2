@@ -157,55 +157,42 @@ export const getIsoDate = (dateString?: string): string => {
 
 export const parseDate = (dateString?: string): Date | null => {
     if (!dateString) return null;
+    const datePart = dateString.trim().split(' ')[0];
+
+    // Try YYYY-MM-DD or YYYY/MM/DD format first. It's unambiguous.
+    let match = datePart.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
+    if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const day = parseInt(match[3], 10);
+        const date = new Date(year, month - 1, day);
+        // Validate to ensure it's a real date (e.g. not 2024-02-30)
+        if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+            return date;
+        }
+    }
     
-    // Clean the string and handle potential "pm/am"
-    const cleanStr = dateString.trim();
+    // Then try DD/MM/YYYY or D/M/YYYY format, as suggested by original code comments.
+    match = datePart.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+    if (match) {
+        const day = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10);
+        const year = parseInt(match[3], 10);
+        const date = new Date(year, month - 1, day);
+        // Validate to ensure it's a real date (e.g. not 32/01/2024)
+        if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+            return date;
+        }
+    }
     
-    // Try ISO format first (YYYY-MM-DD...)
-    let d = new Date(cleanStr);
-    if (!isNaN(d.getTime()) && cleanStr.includes('-') && cleanStr.indexOf('-') === 4) {
+    // Fallback for other formats that new Date() can handle. This is a last resort.
+    const d = new Date(datePart);
+    if (!isNaN(d.getTime())) {
+        // We will normalize this with setHours(0,0,0,0) in the calling code.
         return d;
     }
 
-    // Handle DD/MM/YYYY HH:mm:ss
-    const parts = cleanStr.split(/[\s,]+/);
-    const datePart = parts[0];
-    const timePart = parts[1] || '';
-    const ampm = parts[2] || '';
-
-    let day: number, month: number, year: number;
-    let match = datePart.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
-    if (match) {
-        day = parseInt(match[1], 10);
-        month = parseInt(match[2], 10);
-        year = parseInt(match[3], 10);
-    } else {
-        // Try YYYY/MM/DD
-        match = datePart.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
-        if (match) {
-            year = parseInt(match[1], 10);
-            month = parseInt(match[2], 10);
-            day = parseInt(match[3], 10);
-        } else {
-            // Fallback to native Date for other formats
-            d = new Date(cleanStr);
-            return isNaN(d.getTime()) ? null : d;
-        }
-    }
-
-    let hours = 0, minutes = 0, seconds = 0;
-    if (timePart) {
-        const tParts = timePart.split(':');
-        hours = parseInt(tParts[0], 10) || 0;
-        minutes = parseInt(tParts[1], 10) || 0;
-        seconds = parseInt(tParts[2], 10) || 0;
-
-        if (ampm.toLowerCase() === 'pm' && hours < 12) hours += 12;
-        if (ampm.toLowerCase() === 'am' && hours === 12) hours = 0;
-    }
-
-    const finalDate = new Date(year, month - 1, day, hours, minutes, seconds);
-    return isNaN(finalDate.getTime()) ? null : finalDate;
+    return null;
 };
 
 export const robustCsvParser = (csvText: string): string[][] => {
