@@ -974,57 +974,69 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const loginKey = `last-login-${authenticatedUser.mailId}`;
         const lastLogin = localStorage.getItem(loginKey);
         
-        // If they already logged in today on this device, don't send another record to the sheet
+        // 1. Check LocalStorage first (fastest)
         if (lastLogin === todayStr) {
             hasRecordedLogin.current = true;
-            console.log('Login already recorded for today in localStorage');
-        } else {
-            // Second layer: check if they already have a login entry in the history sheet for today
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            const alreadyInHistory = taskHistory.some(h => {
-                if (h.systemType !== 'Login') return false;
-                if ((h.changedBy || '').toLowerCase() !== authenticatedUser.mailId.toLowerCase()) return false;
-                const hDate = parseDate(h.timestamp);
-                if (!hDate) return false;
-                hDate.setHours(0, 0, 0, 0);
-                return hDate.getTime() === today.getTime();
-            });
+            console.log('[LoginGuard] Already recorded in localStorage for today');
+            return;
+        }
 
-            if (alreadyInHistory) {
-                hasRecordedLogin.current = true;
-                localStorage.setItem(loginKey, todayStr);
-                console.log('Login already exists in History sheet for today');
-            } else {
-                hasRecordedLogin.current = true;
-                
-                // Record login in Google Sheet for cross-server persistence
-                postToGoogleSheet({
-                    action: 'create',
-                    sheetName: 'Done Task Status',
-                    newData: {
-                        'Task ID': 'LOGIN-' + Date.now(),
-                        'System Type': 'Login',
-                        'TASK': 'User Login',
-                        'Planned': todayStr,
-                        'Timestamp': todayStr,
-                        'DOER NAME': authenticatedUser.mailId,
-                        'Marked Done By': authenticatedUser.mailId,
-                        'Login ID': authenticatedUser.mailId
-                    },
-                    historyRecord: {
-                        systemType: 'Login',
-                        task: 'User Login',
-                        changedBy: authenticatedUser.mailId,
-                        change: `Logged in from ${window.location.hostname}`
-                    }
-                })
-                .then(() => {
-                    localStorage.setItem(loginKey, todayStr);
-                })
-                .catch(err => console.error('Failed to record login in Google Sheet:', err));
-            }
+        // 2. If history is still loading, wait for it to avoid race conditions
+        // We assume history is loading if it's empty and the app is currently refreshing
+        if (taskHistory.length === 0 && isRefreshing) {
+            console.log('[LoginGuard] Waiting for taskHistory to load before checking for duplicates...');
+            return;
+        }
+        
+        // 3. Check History Sheet (cross-device/cross-browser)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const alreadyInHistory = taskHistory.some(h => {
+            if (h.systemType !== 'Login') return false;
+            if ((h.changedBy || '').toLowerCase() !== authenticatedUser.mailId.toLowerCase()) return false;
+            const hDate = parseDate(h.timestamp);
+            if (!hDate) return false;
+            hDate.setHours(0, 0, 0, 0);
+            return hDate.getTime() === today.getTime();
+        });
+
+        if (alreadyInHistory) {
+            hasRecordedLogin.current = true;
+            localStorage.setItem(loginKey, todayStr);
+            console.log('[LoginGuard] Login already exists in History sheet for today');
+        } else {
+            hasRecordedLogin.current = true;
+            // Set localStorage IMMEDIATELY to prevent duplicates if user refreshes before sheet write completes
+            localStorage.setItem(loginKey, todayStr);
+            console.log('[LoginGuard] Recording new login for today:', authenticatedUser.mailId);
+            
+            // Record login in Google Sheet for cross-server persistence
+            postToGoogleSheet({
+                action: 'create',
+                sheetName: 'Done Task Status',
+                newData: {
+                    'Task ID': 'LOGIN-' + Date.now(),
+                    'System Type': 'Login',
+                    'TASK': 'User Login',
+                    'Planned': todayStr,
+                    'Timestamp': todayStr,
+                    'DOER NAME': authenticatedUser.mailId,
+                    'Marked Done By': authenticatedUser.mailId,
+                    'Login ID': authenticatedUser.mailId
+                },
+                historyRecord: {
+                    systemType: 'Login',
+                    task: 'User Login',
+                    changedBy: authenticatedUser.mailId,
+                    change: `Logged in from ${window.location.hostname}`
+                }
+            })
+            .catch(err => {
+                console.error('[LoginGuard] Failed to record login in Google Sheet:', err);
+                // Optional: clear localStorage on failure so it can retry? 
+                // But usually we don't want to spam if it's a persistent error.
+            });
         }
 
         // 1. Initial HTTP Check-in and State Fetch
@@ -1089,7 +1101,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             clearInterval(checkInInterval);
             socket.close();
         };
-    }, [authenticatedUser, taskHistory]);
+    }, [authenticatedUser, taskHistory, isRefreshing]);
 
     // --- New State for Calendar View ---
     const [currentView, setCurrentView] = useState<'stats' | 'calendar'>('stats');
