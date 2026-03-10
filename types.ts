@@ -68,7 +68,7 @@ export interface DashboardTask {
 }
 
 // Fix: Define UserRole type exported for use in index.tsx
-export type UserRole = 'Admin' | 'Manager' | 'User';
+export type UserRole = 'Super Admin' | 'Admin' | 'Manager' | 'User';
 
 // Fix: Add optional teamEmails property to support Manager accounts
 export interface AuthenticatedUser {
