@@ -113,5 +113,13 @@ export interface TaskHistory {
   change: string;
 }
 
+export interface AttendanceCheck {
+    name: string;
+    link: string;
+    statusQ: string;
+    statusR: string;
+    gmail: string;
+}
+
 export type AppMode = 'checklist' | 'delegation' | 'dashboard';
 export type ChecklistSubMode = 'templates' | 'master';
