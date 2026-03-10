@@ -933,7 +933,18 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 const res = await fetch('/api/presence/state');
                 const data = await res.json();
                 console.log('Current presence state:', data);
-                setLiveUsers(data.dailyUsers || data.liveUsers);
+                let users = data.dailyUsers || data.liveUsers || [];
+                
+                // Ensure current user is always in the list locally even if server state reset
+                if (authenticatedUser && !users.find((u: any) => u.email === authenticatedUser.mailId)) {
+                    users.push({
+                        email: authenticatedUser.mailId,
+                        role: authenticatedUser.role,
+                        isLive: true,
+                        lastSeen: new Date().toISOString()
+                    });
+                }
+                setLiveUsers(users);
             } catch (e) {
                 console.error('Failed to initialize presence via HTTP', e);
             }
@@ -959,8 +970,17 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'presence') {
-                    // Use dailyUsers if available, otherwise fallback to liveUsers
-                    setLiveUsers(data.dailyUsers || data.liveUsers);
+                    let users = data.dailyUsers || data.liveUsers || [];
+                    // Ensure current user is always in the list locally
+                    if (authenticatedUser && !users.find((u: any) => u.email === authenticatedUser.mailId)) {
+                        users.push({
+                            email: authenticatedUser.mailId,
+                            role: authenticatedUser.role,
+                            isLive: true,
+                            lastSeen: new Date().toISOString()
+                        });
+                    }
+                    setLiveUsers(users);
                 }
             } catch (e) {
                 console.error('Failed to parse presence message', e);
@@ -2734,7 +2754,17 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                         try {
                             const res = await fetch('/api/presence/state');
                             const data = await res.json();
-                            setLiveUsers(data.dailyUsers || data.liveUsers);
+                            let users = data.dailyUsers || data.liveUsers || [];
+                            // Ensure current user is always in the list locally
+                            if (authenticatedUser && !users.find((u: any) => u.email === authenticatedUser.mailId)) {
+                                users.push({
+                                    email: authenticatedUser.mailId,
+                                    role: authenticatedUser.role,
+                                    isLive: true,
+                                    lastSeen: new Date().toISOString()
+                                });
+                            }
+                            setLiveUsers(users);
                         } catch (e) {
                             console.error('Failed to refresh presence', e);
                         }
