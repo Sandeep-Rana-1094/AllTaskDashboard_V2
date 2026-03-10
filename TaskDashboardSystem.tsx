@@ -969,17 +969,37 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
     useEffect(() => {
         if (!authenticatedUser || hasRecordedLogin.current) return;
-        hasRecordedLogin.current = true;
+        
+        const todayStr = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
+        const loginKey = `last-login-${authenticatedUser.mailId}`;
+        const lastLogin = localStorage.getItem(loginKey);
+        
+        // If they already logged in today on this device, don't send another record to the sheet
+        if (lastLogin === todayStr) {
+            hasRecordedLogin.current = true;
+            console.log('Login already recorded for today in localStorage');
+        } else {
+            // Second layer: check if they already have a login entry in the history sheet for today
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const alreadyInHistory = taskHistory.some(h => {
+                if (h.systemType !== 'Login') return false;
+                if ((h.changedBy || '').toLowerCase() !== authenticatedUser.mailId.toLowerCase()) return false;
+                const hDate = parseDate(h.timestamp);
+                if (!hDate) return false;
+                hDate.setHours(0, 0, 0, 0);
+                return hDate.getTime() === today.getTime();
+            });
 
-        // 1. Initial HTTP Check-in and State Fetch
-        // This ensures tracking works even if WebSockets are blocked in an iframe
-        const initPresence = async () => {
-            try {
-                console.log('Attempting presence check-in for:', authenticatedUser.mailId);
+            if (alreadyInHistory) {
+                hasRecordedLogin.current = true;
+                localStorage.setItem(loginKey, todayStr);
+                console.log('Login already exists in History sheet for today');
+            } else {
+                hasRecordedLogin.current = true;
                 
                 // Record login in Google Sheet for cross-server persistence
-                // We use 'Done Task Status' as a carrier sheet because 'History' direct write is not configured in GAS.
-                // The GAS script will automatically append the historyRecord to the History sheet.
                 postToGoogleSheet({
                     action: 'create',
                     sheetName: 'Done Task Status',
@@ -987,8 +1007,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                         'Task ID': 'LOGIN-' + Date.now(),
                         'System Type': 'Login',
                         'TASK': 'User Login',
-                        'Planned': new Date().toLocaleDateString('en-GB'),
-                        'Timestamp': new Date().toLocaleDateString('en-GB'),
+                        'Planned': todayStr,
+                        'Timestamp': todayStr,
                         'DOER NAME': authenticatedUser.mailId,
                         'Marked Done By': authenticatedUser.mailId,
                         'Login ID': authenticatedUser.mailId
@@ -999,8 +1019,19 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                         changedBy: authenticatedUser.mailId,
                         change: `Logged in from ${window.location.hostname}`
                     }
-                }).catch(err => console.error('Failed to record login in Google Sheet:', err));
+                })
+                .then(() => {
+                    localStorage.setItem(loginKey, todayStr);
+                })
+                .catch(err => console.error('Failed to record login in Google Sheet:', err));
+            }
+        }
 
+        // 1. Initial HTTP Check-in and State Fetch
+        // This ensures tracking works even if WebSockets are blocked in an iframe
+        const initPresence = async () => {
+            try {
+                console.log('Attempting presence check-in for:', authenticatedUser.mailId);
                 const checkInRes = await fetch('/api/presence/check-in', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1058,7 +1089,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             clearInterval(checkInInterval);
             socket.close();
         };
-    }, [authenticatedUser]);
+    }, [authenticatedUser, taskHistory]);
 
     // --- New State for Calendar View ---
     const [currentView, setCurrentView] = useState<'stats' | 'calendar'>('stats');
