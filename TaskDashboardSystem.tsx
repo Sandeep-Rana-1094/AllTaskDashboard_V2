@@ -977,40 +977,45 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const now = new Date();
         const todayStr = now.toLocaleDateString('en-GB'); // DD/MM/YYYY
         const fullTimestamp = now.toLocaleString('en-GB'); // DD/MM/YYYY, HH:MM:SS
-        const loginKey = `last-login-${authenticatedUser.mailId}`;
+        const loginKey = `last-login-${authenticatedUser.mailId.toLowerCase().trim()}`;
         const lastLogin = localStorage.getItem(loginKey);
         
+        // 0. Prevent duplicates from old Vercel deployments if they are still open
+        if (window.location.hostname.includes('vercel.app')) {
+            console.warn('[LoginGuard] Login recording is disabled on Vercel to prevent duplicates in the Google Sheet. Please use the official Cloud Run URL.');
+            hasRecordedLogin.current = true;
+            return;
+        }
+
         // 1. Check LocalStorage first (Confirmed success)
         if (lastLogin === todayStr) {
             hasRecordedLogin.current = true;
-            console.log('[LoginGuard] Already recorded in localStorage for today');
+            console.log('[LoginGuard] Already recorded in localStorage for today:', todayStr);
             return;
         }
 
         // 2. If history is still loading, wait for it to avoid race conditions
-        // But only if we haven't already marked it as pending in this session.
         if (taskHistory.length === 0 && isRefreshing) {
             console.log('[LoginGuard] Waiting for taskHistory to load...');
             return;
         }
         
         // 3. Check History Sheet (cross-device/cross-browser)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
+        const userEmail = authenticatedUser.mailId.toLowerCase().trim();
         const alreadyInHistory = taskHistory.some(h => {
             if (h.systemType !== 'Login') return false;
-            if ((h.changedBy || '').toLowerCase() !== authenticatedUser.mailId.toLowerCase()) return false;
-            const hDate = parseDate(h.timestamp);
-            if (!hDate) return false;
-            hDate.setHours(0, 0, 0, 0);
-            return hDate.getTime() === today.getTime();
+            const changedBy = (h.changedBy || '').toLowerCase().trim();
+            if (changedBy !== userEmail) return false;
+            
+            // Use string prefix matching for the date part (DD/MM/YYYY)
+            // This is more robust against timezone shifts than Date object comparison
+            return h.timestamp.startsWith(todayStr);
         });
 
         if (alreadyInHistory) {
             hasRecordedLogin.current = true;
             localStorage.setItem(loginKey, todayStr);
-            console.log('[LoginGuard] Login already exists in History sheet for today');
+            console.log('[LoginGuard] Login already exists in History sheet for today:', todayStr);
             return;
         }
 
@@ -1021,7 +1026,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         }
 
         // 5. Record new login
-        console.log('[LoginGuard] Recording new login for today:', authenticatedUser.mailId);
+        console.log('[LoginGuard] Recording new login for today:', userEmail, 'Date:', todayStr);
         isLoginPending.current = true;
         localStorage.setItem(loginKey, 'pending-' + todayStr);
         
@@ -1049,7 +1054,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             hasRecordedLogin.current = true;
             isLoginPending.current = false;
             localStorage.setItem(loginKey, todayStr);
-            console.log('[LoginGuard] Successfully recorded login in Google Sheet');
+            console.log('[LoginGuard] Successfully recorded login in Google Sheet for:', userEmail);
         })
         .catch(err => {
             console.error('[LoginGuard] Failed to record login in Google Sheet:', err);
