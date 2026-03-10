@@ -161,11 +161,11 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
                 return;
             }
 
-            // 2. Check if the user is in the auth list (Admin or User)
+            // 2. Check if the user is in the auth list (Admin, Super Admin or User)
             const foundUserInUsersSheet = users.find(u => u.mailId.toLowerCase() === lowerCaseEmail);
             if (foundUserInUsersSheet) {
-                if (foundUserInUsersSheet.role === 'Admin') {
-                    // Admin found, ask for password
+                if (foundUserInUsersSheet.role === 'Admin' || foundUserInUsersSheet.role === 'Super Admin') {
+                    // Admin or Super Admin found, ask for password
                     setAdminUser(foundUserInUsersSheet);
                     setStep('password');
                 } else {
@@ -187,7 +187,7 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
         if (!adminUser) return;
         
         if (adminUser.password === password) {
-            onLoginSuccess({ mailId: adminUser.mailId, role: 'Admin' });
+            onLoginSuccess({ mailId: adminUser.mailId, role: adminUser.role as UserRole });
         } else {
             setError('Incorrect password.');
         }
@@ -252,7 +252,8 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
 // --- MAIN APP COMPONENT ---
 const App = () => {
     const [authenticatedUser, setAuthenticatedUser] = useLocalStorage<AuthenticatedUser | null>('task-delegator-auth', null);
-    const isAdmin = authenticatedUser?.role === 'Admin';
+    const isSuperAdmin = authenticatedUser?.role === 'Super Admin';
+    const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
     const isManager = authenticatedUser?.role === 'Manager';
 
     const [mode, setMode] = useState<AppMode>('dashboard');
@@ -298,7 +299,7 @@ const App = () => {
 
     // Enforce view for non-admin roles
     useEffect(() => {
-        if (authenticatedUser && authenticatedUser.role !== 'Admin') {
+        if (authenticatedUser && authenticatedUser.role !== 'Admin' && authenticatedUser.role !== 'Super Admin') {
             setMode('dashboard');
         }
     }, [authenticatedUser]);
