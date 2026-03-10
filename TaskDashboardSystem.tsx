@@ -1,7 +1,7 @@
 
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday } from './types';
+import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday, AttendanceCheck } from './types';
 import { parseDate, calculateWorkingDaysDelay, calculateWorkingDaysPassed } from './utils';
 
 // --- HELPER FUNCTIONS ---
@@ -65,6 +65,13 @@ const getPreviousWeekRange = () => {
     const lastFriday = new Date(lastMonday);
     lastFriday.setDate(lastMonday.getDate() + 4); // Monday to Friday
     return { start: lastMonday, end: lastFriday };
+};
+
+const getCurrentWeekRange = () => {
+    const thisMonday = getMondayOfNWeeksAgo(0);
+    const thisFriday = new Date(thisMonday);
+    thisFriday.setDate(thisMonday.getDate() + 4); // Monday to Friday
+    return { start: thisMonday, end: thisFriday };
 };
 
 const getPeriodDateRange = (period: string): { start: Date; end: Date } => {
@@ -173,6 +180,7 @@ interface TaskDashboardSystemProps {
     currentLeaveData: DailyAttendance[];
     holidays: Holiday[];
     taskHistory: TaskHistory[];
+    attendanceCheckData: AttendanceCheck[];
 }
 
 // --- SVG ICONS ---
@@ -238,6 +246,48 @@ const CircularProgress: React.FC<{ percentage: number; color: string; size?: num
                 />
             </svg>
             <div className="progress-ring-text" style={{ color }}>{percentage}<span>%</span></div>
+        </div>
+    );
+};
+
+const AttendanceAlert: React.FC<{
+    attendanceCheck: AttendanceCheck;
+    onClose: () => void;
+}> = ({ attendanceCheck, onClose }) => {
+    return (
+        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+            <div className="modal-content attendance-alert-modal" style={{ maxWidth: '400px', textAlign: 'center' }}>
+                <div className="modal-header" style={{ justifyContent: 'center', borderBottom: 'none' }}>
+                    <div className="stat-icon" style={{ background: '#fee2e2', color: '#dc2626', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zM8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/>
+                        </svg>
+                    </div>
+                </div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Attendance Reminder</h2>
+                <p style={{ color: '#4b5563', marginBottom: '1.5rem' }}>
+                    Hi <strong>{attendanceCheck.name}</strong>, you haven't marked your attendance for today yet. Please mark it now!
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <a 
+                        href={attendanceCheck.link} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="btn btn-primary"
+                        style={{ padding: '12px', fontSize: '1rem' }}
+                        onClick={onClose}
+                    >
+                        Mark Attendance Here
+                    </a>
+                    <button 
+                        onClick={onClose} 
+                        className="btn btn-secondary"
+                        style={{ padding: '10px' }}
+                    >
+                        Remind Me Later
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };
@@ -762,6 +812,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     currentLeaveData,
     holidays,
     taskHistory,
+    attendanceCheckData,
 }) => {
     const isAdmin = authenticatedUser?.role === 'Admin';
     const [dashboardMode, setDashboardMode] = useState<'myDashboard' | 'employeeMIS'>('myDashboard');
@@ -774,6 +825,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [lastUpdatedTime] = useState(new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }));
     const [inFlightTaskIds, setInFlightTaskIds] = useState<Set<string>>(new Set());
     const [expandedKpi, setExpandedKpi] = useState<'notDone' | 'notOnTime' | null>(null);
+    const [showAttendanceAlert, setShowAttendanceAlert] = useState(false);
+    const [hasShownAttendanceAlert, setHasShownAttendanceAlert] = useState(false);
 
     // --- New State for Calendar View ---
     const [currentView, setCurrentView] = useState<'stats' | 'calendar'>('stats');
@@ -854,6 +907,24 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [dashboardTasks]);
 
     const userEmail = authenticatedUser?.mailId || 'no-email@provided.com';
+
+    const myAttendanceCheck = useMemo(() => {
+        if (!authenticatedUser) return null;
+        const lowerEmail = authenticatedUser.mailId.toLowerCase();
+        const check = attendanceCheckData.find(a => a.gmail.toLowerCase() === lowerEmail);
+        // If statusQ or statusR is blank, it means attendance is not marked for today
+        if (check && (!check.statusQ || check.statusQ.trim() === '' || !check.statusR || check.statusR.trim() === '')) {
+            return check;
+        }
+        return null;
+    }, [attendanceCheckData, authenticatedUser]);
+
+    useEffect(() => {
+        if (myAttendanceCheck && dashboardMode === 'myDashboard' && !hasShownAttendanceAlert) {
+            setShowAttendanceAlert(true);
+            setHasShownAttendanceAlert(true);
+        }
+    }, [myAttendanceCheck, dashboardMode, hasShownAttendanceAlert]);
 
     // Define the system types that allow "Mark Done" functionality.
     const ALLOWED_SYSTEM_TYPES_FOR_SUBMIT = ['New_Checklist', 'Delegation On Demand'];
@@ -1173,6 +1244,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             dayDelay_Percent: dayDelayPercent,
         };
     }, [userTasks, holidays, monthlyNbdCounts]);
+
+    const currentWeekDateRange = useMemo(() => {
+        const { start, end } = getCurrentWeekRange();
+        return `(${formatDateForRange(start)} - ${formatDateForRange(end)})`;
+    }, []);
     
     // --- Employee MIS Calculations ---
     const { onTrackEmployees, negativeScoreEmployees, onLeaveEmployees } = useMemo(() => {
@@ -2275,6 +2351,22 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                             <span className="detail-value">{myAttendanceBreakdown.notMarked}</span>
                                         </div>
                                     )}
+                                    {myAttendanceCheck && (
+                                        <div style={{ marginTop: '1rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+                                            <p style={{ fontSize: '0.85rem', color: '#dc2626', marginBottom: '0.5rem', textAlign: 'center', fontWeight: '500' }}>
+                                                You haven't marked your today's attendance yet!
+                                            </p>
+                                            <a 
+                                                href={myAttendanceCheck.link} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer" 
+                                                className="btn btn-primary"
+                                                style={{ width: '100%', display: 'block', textAlign: 'center', padding: '10px', fontSize: '0.9rem' }}
+                                            >
+                                                Mark Attendance Here
+                                            </a>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -2478,6 +2570,12 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 />
             )}
             <AttendanceDetailModal data={attendanceModalData} onClose={() => setAttendanceModalData(null)} />
+            {showAttendanceAlert && myAttendanceCheck && (
+                <AttendanceAlert 
+                    attendanceCheck={myAttendanceCheck} 
+                    onClose={() => setShowAttendanceAlert(false)} 
+                />
+            )}
         </div>
     );
 };
