@@ -332,10 +332,10 @@ const App = () => {
         const checklistUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Task&range=A:J`;
         const masterUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Master Data')}&range=A:N`;
         const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=Working%20Task%20Form`;
-        const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=A:B`;
-        const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&tq=${encodeURIComponent('SELECT C, G, A, N WHERE C IS NOT NULL AND A IS NOT NULL')}`;
+        const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&range=J:K`;
+        const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT P, Q, R, U WHERE P IS NOT NULL AND Q IS NOT NULL')}`;
         const currentLeaveUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=I:K`;
-        const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Holidays&range=A:B`;
+        const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&range=S:T`;
         const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
         const attendanceCheckUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=M:S`;
 
