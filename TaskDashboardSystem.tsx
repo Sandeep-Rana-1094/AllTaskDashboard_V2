@@ -13,6 +13,19 @@ const formatDateToDDMMYYYY = (date: Date): string => {
     return `${day}/${month}/${year}`;
 };
 
+const formatDateLong = (date: Date): string => {
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const STATUS_LABELS: Record<string, string> = {
+    'P': 'Present',
+    'L': 'Leave',
+    'NM': 'Not Marked',
+    'OT': 'Official Travel',
+    'HD': 'Half Day',
+    'A': 'Absent'
+};
+
 const getEmbeddableGoogleDriveUrl = (url?: string): string | undefined => {
     if (!url) return undefined;
 
@@ -286,6 +299,84 @@ const AttendanceAlert: React.FC<{
                     >
                         Remind Me Later
                     </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const LiveUsersModal: React.FC<{
+    users: { email: string; role: string; isLive: boolean; lastSeen?: string }[];
+    onClose: () => void;
+    onRefresh: () => void;
+}> = ({ users, onClose, onRefresh }) => {
+    const liveCount = users.filter(u => u.isLive).length;
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+                <div className="delegation-modal-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <h2 id="live-users-title" style={{ margin: 0 }}>Today's Logins ({users.length})</h2>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onRefresh(); }} 
+                            className="btn-refresh" 
+                            style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                cursor: 'pointer', 
+                                color: '#6b7280', 
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center'
+                            }}
+                            title="Refresh list"
+                        >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                        </button>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#6b7280' }}>({liveCount} Live)</div>
+                    <button onClick={onClose} className="btn-close-modal" aria-label="Close modal">&times;</button>
+                </div>
+                <div className="history-modal-body" style={{ maxHeight: '60vh' }}>
+                    {users.length > 0 ? (
+                        <ul className="live-users-list" style={{ listStyleType: 'none', padding: 0, margin: 0 }}>
+                            {users.sort((a, b) => (a.isLive === b.isLive ? 0 : a.isLive ? -1 : 1)).map((user, index) => (
+                                <li key={index} style={{ padding: '12px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: user.isLive ? 1 : 0.7 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: user.isLive ? '#22c55e' : '#9ca3af', boxShadow: user.isLive ? '0 0 8px #22c55e' : 'none' }}></div>
+                                        <div>
+                                            <div style={{ fontWeight: '500', fontSize: '0.95rem' }}>{getUserNameFromEmail(user.email)}</div>
+                                            <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{user.email}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        <span style={{ 
+                                            fontSize: '0.7rem', 
+                                            padding: '2px 8px', 
+                                            borderRadius: '12px', 
+                                            background: (user.role === 'Admin' || user.role === 'Super Admin') ? '#fee2e2' : '#e0f2fe',
+                                            color: (user.role === 'Admin' || user.role === 'Super Admin') ? '#dc2626' : '#0369a1',
+                                            fontWeight: '600',
+                                            display: 'block',
+                                            marginBottom: '4px'
+                                        }}>
+                                            {user.role}
+                                        </span>
+                                        {!user.isLive && user.lastSeen && (
+                                            <div style={{ fontSize: '0.65rem', color: '#9ca3af' }}>
+                                                Last seen: {(() => {
+                                                    const d = parseDate(user.lastSeen);
+                                                    return d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+                                                })()}
+                                            </div>
+                                        )}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="no-history-message" style={{ padding: '20px 0', textAlign: 'center' }}>No users have logged in today.</p>
+                    )}
                 </div>
             </div>
         </div>
@@ -814,8 +905,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     taskHistory,
     attendanceCheckData,
 }) => {
-    const isAdmin = authenticatedUser?.role === 'Admin';
-    const [dashboardMode, setDashboardMode] = useState<'myDashboard' | 'employeeMIS'>('myDashboard');
+    const isSuperAdmin = authenticatedUser?.role === 'Super Admin';
+    const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
+    const isHr = authenticatedUser?.role === 'HR';
+    const [dashboardMode, setDashboardMode] = useState<'myDashboard' | 'employeeMIS' | 'hrLeaves'>(isHr ? 'hrLeaves' : 'myDashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'overdue' | 'today'>('all');
     // Fix: Initialize selectedTaskIds using useState with a new Set<string>
@@ -827,6 +920,231 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [expandedKpi, setExpandedKpi] = useState<'notDone' | 'notOnTime' | null>(null);
     const [showAttendanceAlert, setShowAttendanceAlert] = useState(false);
     const [hasShownAttendanceAlert, setHasShownAttendanceAlert] = useState(false);
+    const [liveUsers, setLiveUsers] = useState<{ email: string; role: string; isLive: boolean; lastSeen?: string }[]>([]);
+    const [showLiveUsersModal, setShowLiveUsersModal] = useState(false);
+    const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>('All');
+    const wsRef = useRef<WebSocket | null>(null);
+
+    // Derived state to ensure current user is always included in the logins list
+    // and also include historical logins from the Google Sheet for cross-server visibility
+    const allLogins = useMemo(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // 1. Get logins from the History sheet (persistent across servers)
+        const historicalLogins = taskHistory
+            .filter(h => {
+                if (h.systemType !== 'Login') return false;
+                const hDate = parseDate(h.timestamp);
+                if (!hDate) return false;
+                hDate.setHours(0, 0, 0, 0);
+                return hDate.getTime() === today.getTime();
+            })
+            .map(h => ({
+                email: h.changedBy,
+                role: 'User', // Default role if not specified in history
+                isLive: false,
+                lastSeen: h.timestamp
+            }));
+
+        // 2. Combine with live users from the current server
+        const combined = [...liveUsers];
+        
+        // Add historical ones if they aren't already in the live list
+        historicalLogins.forEach(hist => {
+            const exists = combined.find(u => (u.email || '').toLowerCase() === (hist.email || '').toLowerCase());
+            if (!exists) {
+                combined.push(hist);
+            } else if (!exists.isLive) {
+                // If exists but not live, update lastSeen if history is newer
+                if (new Date(hist.lastSeen).getTime() > new Date(exists.lastSeen || 0).getTime()) {
+                    exists.lastSeen = hist.lastSeen;
+                }
+            }
+        });
+
+        if (!authenticatedUser) return combined;
+        
+        const currentEmail = authenticatedUser.mailId.toLowerCase();
+        const exists = combined.find(u => (u.email || '').toLowerCase() === currentEmail);
+        if (exists) {
+            exists.isLive = true; // Ensure current user is always shown as live
+            return combined;
+        }
+        
+        return [
+            ...combined,
+            {
+                email: authenticatedUser.mailId,
+                role: authenticatedUser.role,
+                isLive: true,
+                lastSeen: new Date().toISOString()
+            }
+        ];
+    }, [liveUsers, authenticatedUser, taskHistory]);
+
+    const hasRecordedLogin = useRef(false);
+    const isLoginPending = useRef(false);
+
+    useEffect(() => {
+        if (!authenticatedUser || hasRecordedLogin.current || isLoginPending.current) return;
+        
+        const now = new Date();
+        const todayStr = now.toLocaleDateString('en-GB'); // DD/MM/YYYY
+        const fullTimestamp = now.toLocaleString('en-GB'); // DD/MM/YYYY, HH:MM:SS
+        const loginKey = `last-login-${authenticatedUser.mailId.toLowerCase().trim()}`;
+        const lastLogin = localStorage.getItem(loginKey);
+        
+        // 0. Prevent duplicates from old Vercel deployments if they are still open
+        if (window.location.hostname.includes('vercel.app')) {
+            console.warn('[LoginGuard] Login recording is disabled on Vercel to prevent duplicates in the Google Sheet. Please use the official Cloud Run URL.');
+            hasRecordedLogin.current = true;
+            return;
+        }
+
+        // 1. Check LocalStorage first (Confirmed success)
+        if (lastLogin === todayStr) {
+            hasRecordedLogin.current = true;
+            console.log('[LoginGuard] Already recorded in localStorage for today:', todayStr);
+            return;
+        }
+
+        // 2. If history is still loading, wait for it to avoid race conditions
+        if (taskHistory.length === 0 && isRefreshing) {
+            console.log('[LoginGuard] Waiting for taskHistory to load...');
+            return;
+        }
+        
+        // 3. Check History Sheet (cross-device/cross-browser)
+        const userEmail = authenticatedUser.mailId.toLowerCase().trim();
+        const alreadyInHistory = taskHistory.some(h => {
+            if (h.systemType !== 'Login') return false;
+            const changedBy = (h.changedBy || '').toLowerCase().trim();
+            if (changedBy !== userEmail) return false;
+            
+            // Use string prefix matching for the date part (DD/MM/YYYY)
+            // This is more robust against timezone shifts than Date object comparison
+            return h.timestamp.startsWith(todayStr);
+        });
+
+        if (alreadyInHistory) {
+            hasRecordedLogin.current = true;
+            localStorage.setItem(loginKey, todayStr);
+            console.log('[LoginGuard] Login already exists in History sheet for today:', todayStr);
+            return;
+        }
+
+        // 4. If we are already pending in another tab or previous attempt, don't start another request
+        if (lastLogin === 'pending-' + todayStr) {
+            console.log('[LoginGuard] Login is currently pending in another tab or attempt.');
+            return;
+        }
+
+        // 5. Record new login
+        console.log('[LoginGuard] Recording new login for today:', userEmail, 'Date:', todayStr);
+        isLoginPending.current = true;
+        localStorage.setItem(loginKey, 'pending-' + todayStr);
+        
+        postToGoogleSheet({
+            action: 'create',
+            sheetName: 'Done Task Status',
+            newData: {
+                'Task ID': 'LOGIN-' + Date.now(),
+                'System Type': 'Login',
+                'TASK': 'User Login',
+                'Planned': todayStr,
+                'Timestamp': fullTimestamp,
+                'DOER NAME': authenticatedUser.mailId,
+                'Marked Done By': authenticatedUser.mailId,
+                'Login ID': authenticatedUser.mailId
+            },
+            historyRecord: {
+                systemType: 'Login',
+                task: 'User Login',
+                changedBy: authenticatedUser.mailId,
+                change: `Logged in from ${window.location.hostname}`
+            }
+        })
+        .then(() => {
+            hasRecordedLogin.current = true;
+            isLoginPending.current = false;
+            localStorage.setItem(loginKey, todayStr);
+            console.log('[LoginGuard] Successfully recorded login in Google Sheet for:', userEmail);
+        })
+        .catch(err => {
+            console.error('[LoginGuard] Failed to record login in Google Sheet:', err);
+            isLoginPending.current = false;
+            localStorage.removeItem(loginKey);
+        });
+
+    }, [authenticatedUser, taskHistory, isRefreshing]);
+
+    useEffect(() => {
+        if (!authenticatedUser) return;
+
+        // 1. Initial HTTP Check-in and State Fetch
+        // This ensures tracking works even if WebSockets are blocked in an iframe
+        const initPresence = async () => {
+            try {
+                console.log('Attempting presence check-in for:', authenticatedUser.mailId);
+                const checkInRes = await fetch('/api/presence/check-in', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: authenticatedUser.mailId,
+                        role: authenticatedUser.role
+                    })
+                });
+                
+                if (checkInRes.ok) {
+                    console.log('Presence check-in successful');
+                } else {
+                    console.warn('Presence check-in failed with status:', checkInRes.status);
+                }
+
+                const res = await fetch('/api/presence/state');
+                const data = await res.json();
+                console.log('Current presence state:', data);
+                setLiveUsers(data.dailyUsers || data.liveUsers || []);
+            } catch (e) {
+                console.error('Failed to initialize presence via HTTP', e);
+            }
+        };
+
+        initPresence();
+        const checkInInterval = setInterval(initPresence, 60000); // Check-in every minute
+
+        // 2. WebSocket for Real-time Updates
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        const socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            socket.send(JSON.stringify({
+                type: 'identify',
+                email: authenticatedUser.mailId,
+                role: authenticatedUser.role
+            }));
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'presence') {
+                    setLiveUsers(data.dailyUsers || data.liveUsers || []);
+                }
+            } catch (e) {
+                console.error('Failed to parse presence message', e);
+            }
+        };
+
+        wsRef.current = socket;
+
+        return () => {
+            clearInterval(checkInInterval);
+            socket.close();
+        };
+    }, [authenticatedUser]);
 
     // --- New State for Calendar View ---
     const [currentView, setCurrentView] = useState<'stats' | 'calendar'>('stats');
@@ -842,6 +1160,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [selectedMisPeriod, setSelectedMisPeriod] = useState<string>('lastWeek');
     const [misSubView, setMisSubView] = useState<'mis' | 'employee'>('mis');
     const [misEmployeeCurrentView, setMisEmployeeCurrentView] = useState<'stats' | 'calendar'>('stats');
+    const [hrSelectedAttendanceCategory, setHrSelectedAttendanceCategory] = useState<{ title: string; dates: Date[] } | null>(null);
     const reportRef = useRef<HTMLDivElement>(null);
 
     // Statuses that count as being present for work
@@ -851,6 +1170,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         if (selectedMisEmployeeName) {
             setMisSubView('mis'); // Reset to MIS view when employee changes
             setMisEmployeeCurrentView('stats'); // Reset calendar/stats view as well
+            setHrSelectedAttendanceCategory(null); // Reset HR selected category
             const timer = setTimeout(() => {
                 reportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 100);
@@ -1251,6 +1571,17 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, []);
     
     // --- Employee MIS Calculations ---
+    const getStatusAbbreviation = (status: string | undefined): string => {
+        if (!status) return 'NM';
+        const s = status.toLowerCase().trim();
+        if (s.includes('present')) return 'P';
+        if (s.includes('leave')) return 'L';
+        if (s.includes('official travel')) return 'OT';
+        if (s.includes('half day')) return 'HD';
+        if (s.includes('absent')) return 'A';
+        return 'NM';
+    };
+
     const { onTrackEmployees, negativeScoreEmployees, onLeaveEmployees } = useMemo(() => {
         const { start: prevWeekStart, end: prevWeekEnd } = getPreviousWeekRange();
         
@@ -1267,17 +1598,36 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             return acc;
         }, {} as Record<string, DashboardTask[]>);
         
-        const onTrack: Person[] = [];
-        const negativeScore: Person[] = [];
-        const onLeave: Person[] = [];
+        const onTrack: (Person & { todayStatus?: string })[] = [];
+        const negativeScore: (Person & { todayStatus?: string })[] = [];
+        const onLeave: (Person & { todayStatus?: string })[] = [];
+
+        // Get today's date string for matching attendance
+        const today = new Date();
+        const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        // Map of employee name to today's status
+        const todayAttendanceMap = new Map<string, string>();
+        dailyAttendanceData.forEach(att => {
+            const attDate = parseDate(att.date);
+            if (attDate) {
+                const attDateKey = `${attDate.getFullYear()}-${String(attDate.getMonth() + 1).padStart(2, '0')}-${String(attDate.getDate()).padStart(2, '0')}`;
+                if (attDateKey === todayKey) {
+                    todayAttendanceMap.set(att.name.toLowerCase().trim(), att.status);
+                }
+            }
+        });
 
         // Identify who is on leave based on currentLeaveData (from Attendance sheet I:K)
         const currentLeaveNames = new Set(currentLeaveData.map(l => l.name.toLowerCase().trim()));
         
         people.forEach(person => {
             const personNameLower = person.name.toLowerCase().trim();
+            const todayStatus = todayAttendanceMap.get(personNameLower);
+            const statusAbbr = getStatusAbbreviation(todayStatus);
+
             if (currentLeaveNames.has(personNameLower)) {
-                onLeave.push(person);
+                onLeave.push({ ...person, todayStatus: statusAbbr });
             }
         });
 
@@ -1286,6 +1636,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (!personInfo) {
                 continue; // Skip employees not in the active 'people' list
             }
+
+            const personNameLower = name.toLowerCase().trim();
+            const todayStatus = todayAttendanceMap.get(personNameLower);
+            const statusAbbr = getStatusAbbreviation(todayStatus);
 
             const userTasks = tasksByUserName[name];
             if (userTasks.length === 0) continue;
@@ -1314,9 +1668,9 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             });
             
             if (isNegative) {
-                negativeScore.push(personInfo);
+                negativeScore.push({ ...personInfo, todayStatus: statusAbbr });
             } else {
-                onTrack.push(personInfo);
+                onTrack.push({ ...personInfo, todayStatus: statusAbbr });
             }
         }
         
@@ -1325,7 +1679,27 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         onLeave.sort((a, b) => a.name.localeCompare(b.name));
         
         return { onTrackEmployees: onTrack, negativeScoreEmployees: negativeScore, onLeaveEmployees: onLeave };
-    }, [misWeekdayTasks, people, currentLeaveData]);
+    }, [misWeekdayTasks, people, currentLeaveData, dailyAttendanceData]);
+
+    const statusCounts = useMemo(() => {
+        const counts: Record<string, number> = { 'P': 0, 'L': 0, 'NM': 0, 'OT': 0, 'HD': 0, 'A': 0 };
+        const uniqueEmployees = new Map<string, string>();
+        
+        onTrackEmployees.forEach(p => uniqueEmployees.set(p.name, p.todayStatus || 'NM'));
+        negativeScoreEmployees.forEach(p => uniqueEmployees.set(p.name, p.todayStatus || 'NM'));
+        onLeaveEmployees.forEach(p => uniqueEmployees.set(p.name, p.todayStatus || 'NM'));
+
+        uniqueEmployees.forEach((status) => {
+            if (counts[status] !== undefined) {
+                counts[status]++;
+            }
+        });
+        return counts;
+    }, [onTrackEmployees, negativeScoreEmployees, onLeaveEmployees]);
+
+    const totalEmployeeCount = useMemo(() => {
+        return (Object.values(statusCounts) as number[]).reduce((a, b) => a + b, 0);
+    }, [statusCounts]);
 
     const misReportData = useMemo(() => {
         if (!selectedMisEmployeeName) return null;
@@ -1680,6 +2054,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         return Array.from(names).sort();
     }, [negativeScoreEmployees, onTrackEmployees, onLeaveEmployees]);
 
+    const hrAllEmployees = useMemo(() => {
+        return people.map(p => p.name).sort();
+    }, [people]);
+
     const { filteredPendingTasks, tableTitle } = useMemo(() => {
         let tasksToFilter: DashboardTask[];
         let title: string;
@@ -1968,6 +2346,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     <div className="dashboard-tabs">
                         <button onClick={() => setDashboardMode('myDashboard')} className={dashboardMode === 'myDashboard' ? 'active' : ''}>My Dashboard</button>
                         {isAdmin && <button onClick={() => setDashboardMode('employeeMIS')} className={dashboardMode === 'employeeMIS' ? 'active' : ''}>Employee MIS</button>}
+                        {(isAdmin || isHr) && <button onClick={() => setDashboardMode('hrLeaves')} className={dashboardMode === 'hrLeaves' ? 'active' : ''}>Leaves Dashboard</button>}
                         {/* New button for All Users Dashboard */}
                         {isAdmin && (
                             <button 
@@ -1991,39 +2370,267 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 </div>
             </header>
 
-            {dashboardMode === 'employeeMIS' && isAdmin ? (
+            {dashboardMode === 'hrLeaves' && (isAdmin || isHr) && (
+                <div className="hr-leaves-view" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                        <h3 className="mis-view-title" style={{ margin: 0 }}>Leaves Dashboard</h3>
+                    </div>
+
+                    <div className="dashboard-main" style={{ display: 'flex', gap: '32px', alignItems: 'flex-start' }}>
+                        {/* LEFT SIDE: Employee Details & Attendance Summary */}
+                        <aside className="dashboard-sidebar" style={{ width: '380px', flexShrink: 0 }}>
+                            {selectedMisEmployeeName && misReportData ? (
+                                <>
+                                    <div className="dashboard-card user-profile-card" style={{ textAlign: 'center', padding: '24px', marginBottom: '24px' }}>
+                                        <div className="dashboard-avatar" style={{ width: '100px', height: '100px', margin: '0 auto 16px' }}>
+                                            {misReportData.employeeDetails.photoUrl ? (
+                                                <img src={misReportData.employeeDetails.photoUrl} alt={`${misReportData.employeeDetails.name}'s profile`} referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <UserIcon />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <h3 className="user-name" style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '4px' }}>{misReportData.employeeDetails.name}</h3>
+                                        <p className="user-email" style={{ color: '#6b7280', fontSize: '0.85rem' }}>{misReportData.employeeDetails.email}</p>
+                                    </div>
+                                    <div className="dashboard-card attendance-card" style={{ padding: '24px' }}>
+                                        <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            Attendance Summary 
+                                            <span className="date-range" style={{ fontSize: '0.8rem', fontWeight: '500', color: '#6b7280' }}>{misReportData.attendance.dateRange}</span>
+                                        </h3>
+                                        <div className="attendance-progress" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+                                            <CircularProgress percentage={misReportData.attendance.attendancePercentage} color="#22c55e" />
+                                            <div className="attendance-details-list" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                <div 
+                                                    className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Working Days' ? 'active' : ''}`} 
+                                                    role="button" 
+                                                    tabIndex={0} 
+                                                    onClick={() => setHrSelectedAttendanceCategory({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}
+                                                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}
+                                                    style={{ 
+                                                        display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                        background: hrSelectedAttendanceCategory?.title === 'Working Days' ? '#eff6ff' : '#f9fafb', 
+                                                        borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                        border: hrSelectedAttendanceCategory?.title === 'Working Days' ? '1px solid #3b82f6' : '1px solid transparent'
+                                                    }}
+                                                >
+                                                    <span style={{ fontWeight: '500', color: '#4b5563' }}>Working Days</span>
+                                                    <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.workingDays}</span>
+                                                </div>
+                                                <div 
+                                                    className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Present Days' ? 'active' : ''}`} 
+                                                    role="button" 
+                                                    tabIndex={0} 
+                                                    onClick={() => setHrSelectedAttendanceCategory({ title: 'Present Days', dates: misReportData.attendance.presentDates })}
+                                                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Present Days', dates: misReportData.attendance.presentDates })}
+                                                    style={{ 
+                                                        display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                        background: hrSelectedAttendanceCategory?.title === 'Present Days' ? '#eff6ff' : '#f9fafb', 
+                                                        borderRadius: '10px', border: hrSelectedAttendanceCategory?.title === 'Present Days' ? '1px solid #3b82f6' : '1px solid #e5e7eb', 
+                                                        cursor: 'pointer', transition: 'all 0.2s' 
+                                                    }}
+                                                >
+                                                    <span style={{ fontWeight: '500', color: '#4b5563' }}>Present</span>
+                                                    <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.daysPresent}</span>
+                                                </div>
+                                                {misReportData.attendance.otherStatusesBreakdown.map(({ status, count, dates }) => (
+                                                    <div 
+                                                        className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === `${status} Dates` ? 'active' : ''}`} 
+                                                        key={status} 
+                                                        role="button" 
+                                                        tabIndex={0} 
+                                                        onClick={() => setHrSelectedAttendanceCategory({ title: `${status} Dates`, dates })}
+                                                        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: `${status} Dates`, dates })}
+                                                        style={{ 
+                                                            display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                            background: hrSelectedAttendanceCategory?.title === `${status} Dates` ? '#eff6ff' : '#f9fafb', 
+                                                            borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                            border: hrSelectedAttendanceCategory?.title === `${status} Dates` ? '1px solid #3b82f6' : '1px solid transparent'
+                                                        }}
+                                                    >
+                                                        <span style={{ fontWeight: '500', color: '#4b5563' }}>{status}</span>
+                                                        <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{count}</span>
+                                                    </div>
+                                                ))}
+                                                {misReportData.attendance.notMarked > 0 && (
+                                                    <div 
+                                                        className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? 'active' : ''}`} 
+                                                        role="button" 
+                                                        tabIndex={0} 
+                                                        onClick={() => setHrSelectedAttendanceCategory({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}
+                                                        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}
+                                                        style={{ 
+                                                            display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                            background: hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? '#eff6ff' : '#f9fafb', 
+                                                            borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                            border: hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? '1px solid #3b82f6' : '1px solid transparent'
+                                                        }}
+                                                    >
+                                                        <span style={{ fontWeight: '500', color: '#4b5563' }}>Not Marked</span>
+                                                        <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.notMarked}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent' }}>
+                                    <p>Select an employee to view details</p>
+                                </div>
+                            )}
+                        </aside>
+
+                        {/* RIGHT SIDE: Filters & Detailed Dates */}
+                        <main className="dashboard-content" style={{ flex: '1' }}>
+                            <div className="dashboard-card mis-filters" style={{ padding: '24px', marginBottom: '24px' }}>
+                                <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#374151' }}>Filter Controls</h4>
+                                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                                    <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
+                                        <label htmlFor="hr-select-employee" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Employee</label>
+                                        <select 
+                                            id="hr-select-employee" 
+                                            value={selectedMisEmployeeName} 
+                                            onChange={e => setSelectedMisEmployeeName(e.target.value)}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                        >
+                                            <option value="">-- Select Employee --</option>
+                                            {hrAllEmployees.map(name => <option key={name} value={name}>{name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
+                                        <label htmlFor="hr-select-period" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Period</label>
+                                        <select 
+                                            id="hr-select-period" 
+                                            value={selectedMisPeriod} 
+                                            onChange={e => setSelectedMisPeriod(e.target.value)}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                        >
+                                            {periodOptions.map(option => (
+                                                <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedMisEmployeeName && misReportData ? (
+                                hrSelectedAttendanceCategory ? (
+                                    <div className="dashboard-card" style={{ padding: '24px', minHeight: '400px', animation: 'fadeIn 0.3s ease-out' }}>
+                                        <h3 style={{ fontSize: '1.2rem', fontWeight: '700', marginBottom: '20px', borderBottom: '2px solid #f3f4f6', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            {hrSelectedAttendanceCategory.title}
+                                            <span style={{ background: '#6366f1', color: 'white', padding: '2px 10px', borderRadius: '12px', fontSize: '0.85rem' }}>{hrSelectedAttendanceCategory.dates.length}</span>
+                                        </h3>
+                                        <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '8px' }}>
+                                            <ul style={{ listStyle: 'none', padding: 0 }}>
+                                                {hrSelectedAttendanceCategory.dates.length > 0 ? (
+                                                    [...hrSelectedAttendanceCategory.dates]
+                                                        .sort((a, b) => a.getTime() - b.getTime())
+                                                        .map((date, idx) => (
+                                                            <li key={idx} style={{ padding: '14px 0', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#6366f1' }}></div>
+                                                                <span style={{ fontWeight: '500', color: '#374151', fontSize: '1rem' }}>{formatDateLong(date)}</span>
+                                                            </li>
+                                                        ))
+                                                ) : (
+                                                    <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af' }}>
+                                                        <p>No dates recorded for this category.</p>
+                                                    </div>
+                                                )}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+                                        <div style={{ marginBottom: '16px', opacity: 0.5 }}><TodayIcon /></div>
+                                        <p style={{ fontSize: '1.1rem' }}>Select a category from the summary to view detailed dates</p>
+                                    </div>
+                                )
+                            ) : selectedMisEmployeeName ? (
+                                <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#ef4444' }}>
+                                    <h3>No attendance data found for this employee in the selected period.</h3>
+                                </div>
+                            ) : (
+                                <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent' }}>
+                                    <h3>Please select an employee to view their leave data.</h3>
+                                </div>
+                            )}
+                        </main>
+                    </div>
+                </div>
+            )}
+
+            {dashboardMode === 'employeeMIS' && isAdmin && (
                 <div className="employee-mis-view">
-                    <h3 className="mis-view-title">Last Week's Team Highlights</h3>
+                    <h3 className="mis-view-title">Team Highlights</h3>
                     {misTasksError && <div className="error-message" style={{marginBottom: '24px'}}>{misTasksError}</div>}
+                    
+                    <div className="status-filters-container" style={{ marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        <button 
+                            className={`status-filter-btn ${selectedStatusFilter === 'All' ? 'active' : ''}`}
+                            onClick={() => setSelectedStatusFilter(selectedStatusFilter === 'All' ? null : 'All')}
+                            style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid #e5e7eb', background: selectedStatusFilter === 'All' ? '#6366f1' : '#fff', color: selectedStatusFilter === 'All' ? '#fff' : '#4b5563', cursor: 'pointer', fontWeight: '600' }}
+                        >
+                            All status ({totalEmployeeCount})
+                        </button>
+                        {['P', 'L', 'NM', 'OT', 'HD'].map(status => (
+                            <button 
+                                key={status}
+                                className={`status-filter-btn ${selectedStatusFilter === status ? 'active' : ''}`}
+                                onClick={() => setSelectedStatusFilter(selectedStatusFilter === status ? null : status)}
+                                style={{ padding: '8px 16px', borderRadius: '20px', border: '1px solid #e5e7eb', background: selectedStatusFilter === status ? '#6366f1' : '#fff', color: selectedStatusFilter === status ? '#fff' : '#4b5563', cursor: 'pointer', fontWeight: '600' }}
+                            >
+                                {status} ({STATUS_LABELS[status]}) - {statusCounts[status]}
+                            </button>
+                        ))}
+                    </div>
+
                     <div className="highlights-grid">
                         <div className="dashboard-card highlight-card negative">
                             <div className="card-title-section">
                                 <div className="icon-wrapper negative"><NegativeIcon /></div>
                                 <h4 className="card-title negative">Negative score</h4>
-                                <span className="count-badge negative">{negativeScoreEmployees.length} Employees</span>
+                                <span className="count-badge negative">
+                                    {negativeScoreEmployees.filter(p => !selectedStatusFilter || selectedStatusFilter === 'All' || p.todayStatus === selectedStatusFilter).length} Employees
+                                </span>
                             </div>
                             <div className="employee-tags">
-                                {negativeScoreEmployees.map(person => <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>{person.name}</button>)}
+                                {negativeScoreEmployees
+                                    .filter(person => selectedStatusFilter && (selectedStatusFilter === 'All' || person.todayStatus === selectedStatusFilter))
+                                    .map(person => (
+                                        <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>
+                                            {person.name} <span className="status-abbr" style={{ marginLeft: '4px', opacity: 0.7, fontSize: '0.8em' }}>({person.todayStatus || 'NM'})</span>
+                                        </button>
+                                    ))
+                                }
+                                {(!selectedStatusFilter) && (
+                                    <p style={{ fontSize: '0.85rem', color: '#6b7280', padding: '10px' }}>Select a status to view employees</p>
+                                )}
                             </div>
                         </div>
                         <div className="dashboard-card highlight-card on-track">
                             <div className="card-title-section">
                                 <div className="icon-wrapper on-track"><OnTrackIcon /></div>
                                 <h4 className="card-title on-track">On Track</h4>
-                                <span className="count-badge on-track">{onTrackEmployees.length} Employees</span>
+                                <span className="count-badge on-track">
+                                    {onTrackEmployees.filter(p => !selectedStatusFilter || selectedStatusFilter === 'All' || p.todayStatus === selectedStatusFilter).length} Employees
+                                </span>
                             </div>
                             <div className="employee-tags">
-                                {onTrackEmployees.map(person => <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>{person.name}</button>)}
-                            </div>
-                        </div>
-                        <div className="dashboard-card highlight-card on-leave">
-                            <div className="card-title-section">
-                                <div className="icon-wrapper on-leave"><TodayIcon /></div>
-                                <h4 className="card-title on-leave">Today's On Leave</h4>
-                                <span className="count-badge on-leave">{onLeaveEmployees.length} Employees</span>
-                            </div>
-                            <div className="employee-tags">
-                                {onLeaveEmployees.map(person => <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>{person.name}</button>)}
+                                {onTrackEmployees
+                                    .filter(person => selectedStatusFilter && (selectedStatusFilter === 'All' || person.todayStatus === selectedStatusFilter))
+                                    .map(person => (
+                                        <button key={person.name} className="employee-tag" onClick={() => setSelectedMisEmployeeName(person.name)}>
+                                            {person.name} <span className="status-abbr" style={{ marginLeft: '4px', opacity: 0.7, fontSize: '0.8em' }}>({person.todayStatus || 'NM'})</span>
+                                        </button>
+                                    ))
+                                }
+                                {(!selectedStatusFilter) && (
+                                    <p style={{ fontSize: '0.85rem', color: '#6b7280', padding: '10px' }}>Select a status to view employees</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -2316,7 +2923,9 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                         </div>
                     )}
                 </div>
-            ) : (
+            )}
+
+            {dashboardMode === 'myDashboard' && (
                 <div className="dashboard-main">
                     <aside className="dashboard-sidebar">
                         <div className="dashboard-card user-profile-card">
@@ -2485,6 +3094,15 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                     </div>
                                 )}
                                 <div className="stats-grid">
+                                    {isSuperAdmin && (
+                                        <StatCard
+                                            title="Today's Logins"
+                                            value={allLogins.length}
+                                            icon={<UserIcon />}
+                                            className="stat-card--live stat-card-clickable"
+                                            onClick={() => setShowLiveUsersModal(true)}
+                                        />
+                                    )}
                                     <StatCard title="My Pending Tasks" value={pendingTasks.length} icon={<PendingIcon />} className={`stat-card--pending stat-card-clickable ${filterMode === 'all' ? 'active' : ''}`} onClick={() => setFilterMode('all')} ariaPressed={filterMode === 'all'} />
                                     <StatCard title="Overdue Tasks" value={overdueTasks.length} icon={<OverdueIcon />} className={`stat-card--overdue stat-card-clickable ${filterMode === 'overdue' ? 'active' : ''}`} onClick={() => setFilterMode('overdue')} ariaPressed={filterMode === 'overdue'} />
                                     <StatCard title="Tasks Due Today" value={dueTodayTasks.length} icon={<TodayIcon />} className={`stat-card--today stat-card-clickable ${filterMode === 'today' ? 'active' : ''}`} onClick={() => setFilterMode('today')} ariaPressed={filterMode === 'today'} />
@@ -2570,6 +3188,27 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 />
             )}
             <AttendanceDetailModal data={attendanceModalData} onClose={() => setAttendanceModalData(null)} />
+            {showLiveUsersModal && (
+                <LiveUsersModal 
+                    users={allLogins} 
+                    onClose={() => setShowLiveUsersModal(false)} 
+                    onRefresh={async () => {
+                        try {
+                            // 1. Refresh local server presence
+                            const res = await fetch('/api/presence/state');
+                            const data = await res.json();
+                            setLiveUsers(data.dailyUsers || data.liveUsers || []);
+                            
+                            // 2. Refresh Google Sheet data (to see logins from other servers)
+                            if (fetchData) {
+                                await fetchData(false);
+                            }
+                        } catch (e) {
+                            console.error('Failed to refresh presence', e);
+                        }
+                    }}
+                />
+            )}
             {showAttendanceAlert && myAttendanceCheck && (
                 <AttendanceAlert 
                     attendanceCheck={myAttendanceCheck} 
