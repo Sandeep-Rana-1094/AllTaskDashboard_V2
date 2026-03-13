@@ -1158,6 +1158,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     // --- Employee MIS State ---
     const [selectedMisEmployeeName, setSelectedMisEmployeeName] = useState<string | null>(null);
     const [selectedMisPeriod, setSelectedMisPeriod] = useState<string>('lastWeek');
+    const [hrSubView, setHrSubView] = useState<'employee' | 'dailySummary'>('employee');
+    const [selectedHrDate, setSelectedHrDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [misSubView, setMisSubView] = useState<'mis' | 'employee'>('mis');
     const [misEmployeeCurrentView, setMisEmployeeCurrentView] = useState<'stats' | 'calendar'>('stats');
     const [hrSelectedAttendanceCategory, setHrSelectedAttendanceCategory] = useState<{ title: string; dates: Date[] } | null>(null);
@@ -2058,6 +2060,29 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         return people.map(p => p.name).sort();
     }, [people]);
 
+    const dailySummaryData = useMemo(() => {
+        if (dashboardMode !== 'hrLeaves' || hrSubView !== 'dailySummary') return null;
+
+        const targetDate = new Date(selectedHrDate);
+        targetDate.setHours(0, 0, 0, 0);
+        const targetDateStr = targetDate.toDateString();
+
+        const summary = people.map(p => {
+            const attendance = dailyAttendanceData.find(att => {
+                const attDate = parseDate(att.date);
+                return attDate && attDate.toDateString() === targetDateStr && att.name.toLowerCase() === p.name.toLowerCase();
+            });
+
+            return {
+                name: p.name,
+                email: p.email,
+                status: attendance ? attendance.status : 'Not Marked'
+            };
+        });
+
+        return summary;
+    }, [dashboardMode, hrSubView, selectedHrDate, people, dailyAttendanceData]);
+
     const { filteredPendingTasks, tableTitle } = useMemo(() => {
         let tasksToFilter: DashboardTask[];
         let title: string;
@@ -2374,192 +2399,256 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 <div className="hr-leaves-view" style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                         <h3 className="mis-view-title" style={{ margin: 0 }}>Leaves Dashboard</h3>
+                        <div className="dashboard-tabs" style={{ margin: 0 }}>
+                            <button onClick={() => setHrSubView('employee')} className={hrSubView === 'employee' ? 'active' : ''}>Employee View</button>
+                            <button onClick={() => setHrSubView('dailySummary')} className={hrSubView === 'dailySummary' ? 'active' : ''}>Daily Summary</button>
+                        </div>
                     </div>
 
-                    <div className="dashboard-main" style={{ display: 'flex', gap: '32px', alignItems: 'flex-start' }}>
-                        {/* LEFT SIDE: Employee Details & Attendance Summary */}
-                        <aside className="dashboard-sidebar" style={{ width: '380px', flexShrink: 0 }}>
-                            {selectedMisEmployeeName && misReportData ? (
-                                <>
-                                    <div className="dashboard-card user-profile-card" style={{ textAlign: 'center', padding: '24px', marginBottom: '24px' }}>
-                                        <div className="dashboard-avatar" style={{ width: '100px', height: '100px', margin: '0 auto 16px' }}>
-                                            {misReportData.employeeDetails.photoUrl ? (
-                                                <img src={misReportData.employeeDetails.photoUrl} alt={`${misReportData.employeeDetails.name}'s profile`} referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                                            ) : (
-                                                <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <UserIcon />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <h3 className="user-name" style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '4px' }}>{misReportData.employeeDetails.name}</h3>
-                                        <p className="user-email" style={{ color: '#6b7280', fontSize: '0.85rem' }}>{misReportData.employeeDetails.email}</p>
-                                    </div>
-                                    <div className="dashboard-card attendance-card" style={{ padding: '24px' }}>
-                                        <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            Attendance Summary 
-                                            <span className="date-range" style={{ fontSize: '0.8rem', fontWeight: '500', color: '#6b7280' }}>{misReportData.attendance.dateRange}</span>
-                                        </h3>
-                                        <div className="attendance-progress" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
-                                            <CircularProgress percentage={misReportData.attendance.attendancePercentage} color="#22c55e" />
-                                            <div className="attendance-details-list" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                <div 
-                                                    className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Working Days' ? 'active' : ''}`} 
-                                                    role="button" 
-                                                    tabIndex={0} 
-                                                    onClick={() => setHrSelectedAttendanceCategory({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}
-                                                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}
-                                                    style={{ 
-                                                        display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
-                                                        background: hrSelectedAttendanceCategory?.title === 'Working Days' ? '#eff6ff' : '#f9fafb', 
-                                                        borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
-                                                        border: hrSelectedAttendanceCategory?.title === 'Working Days' ? '1px solid #3b82f6' : '1px solid transparent'
-                                                    }}
-                                                >
-                                                    <span style={{ fontWeight: '500', color: '#4b5563' }}>Working Days</span>
-                                                    <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.workingDays}</span>
-                                                </div>
-                                                <div 
-                                                    className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Present Days' ? 'active' : ''}`} 
-                                                    role="button" 
-                                                    tabIndex={0} 
-                                                    onClick={() => setHrSelectedAttendanceCategory({ title: 'Present Days', dates: misReportData.attendance.presentDates })}
-                                                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Present Days', dates: misReportData.attendance.presentDates })}
-                                                    style={{ 
-                                                        display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
-                                                        background: hrSelectedAttendanceCategory?.title === 'Present Days' ? '#eff6ff' : '#f9fafb', 
-                                                        borderRadius: '10px', border: hrSelectedAttendanceCategory?.title === 'Present Days' ? '1px solid #3b82f6' : '1px solid #e5e7eb', 
-                                                        cursor: 'pointer', transition: 'all 0.2s' 
-                                                    }}
-                                                >
-                                                    <span style={{ fontWeight: '500', color: '#4b5563' }}>Present</span>
-                                                    <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.daysPresent}</span>
-                                                </div>
-                                                {misReportData.attendance.otherStatusesBreakdown.map(({ status, count, dates }) => (
-                                                    <div 
-                                                        className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === `${status} Dates` ? 'active' : ''}`} 
-                                                        key={status} 
-                                                        role="button" 
-                                                        tabIndex={0} 
-                                                        onClick={() => setHrSelectedAttendanceCategory({ title: `${status} Dates`, dates })}
-                                                        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: `${status} Dates`, dates })}
-                                                        style={{ 
-                                                            display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
-                                                            background: hrSelectedAttendanceCategory?.title === `${status} Dates` ? '#eff6ff' : '#f9fafb', 
-                                                            borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
-                                                            border: hrSelectedAttendanceCategory?.title === `${status} Dates` ? '1px solid #3b82f6' : '1px solid transparent'
-                                                        }}
-                                                    >
-                                                        <span style={{ fontWeight: '500', color: '#4b5563' }}>{status}</span>
-                                                        <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{count}</span>
-                                                    </div>
-                                                ))}
-                                                {misReportData.attendance.notMarked > 0 && (
-                                                    <div 
-                                                        className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? 'active' : ''}`} 
-                                                        role="button" 
-                                                        tabIndex={0} 
-                                                        onClick={() => setHrSelectedAttendanceCategory({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}
-                                                        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}
-                                                        style={{ 
-                                                            display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
-                                                            background: hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? '#eff6ff' : '#f9fafb', 
-                                                            borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
-                                                            border: hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? '1px solid #3b82f6' : '1px solid transparent'
-                                                        }}
-                                                    >
-                                                        <span style={{ fontWeight: '500', color: '#4b5563' }}>Not Marked</span>
-                                                        <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.notMarked}</span>
+                    {hrSubView === 'employee' ? (
+                        <div className="dashboard-main" style={{ display: 'flex', gap: '32px', alignItems: 'flex-start' }}>
+                            {/* LEFT SIDE: Employee Details & Attendance Summary */}
+                            <aside className="dashboard-sidebar" style={{ width: '380px', flexShrink: 0 }}>
+                                {selectedMisEmployeeName && misReportData ? (
+                                    <>
+                                        <div className="dashboard-card user-profile-card" style={{ textAlign: 'center', padding: '24px', marginBottom: '24px' }}>
+                                            <div className="dashboard-avatar" style={{ width: '100px', height: '100px', margin: '0 auto 16px' }}>
+                                                {misReportData.employeeDetails.photoUrl ? (
+                                                    <img src={misReportData.employeeDetails.photoUrl} alt={`${misReportData.employeeDetails.name}'s profile`} referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <UserIcon />
                                                     </div>
                                                 )}
                                             </div>
+                                            <h3 className="user-name" style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '4px' }}>{misReportData.employeeDetails.name}</h3>
+                                            <p className="user-email" style={{ color: '#6b7280', fontSize: '0.85rem' }}>{misReportData.employeeDetails.email}</p>
+                                        </div>
+                                        <div className="dashboard-card attendance-card" style={{ padding: '24px' }}>
+                                            <h3 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                Attendance Summary 
+                                                <span className="date-range" style={{ fontSize: '0.8rem', fontWeight: '500', color: '#6b7280' }}>{misReportData.attendance.dateRange}</span>
+                                            </h3>
+                                            <div className="attendance-progress" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+                                                <CircularProgress percentage={misReportData.attendance.attendancePercentage} color="#22c55e" />
+                                                <div className="attendance-details-list" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                    <div 
+                                                        className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Working Days' ? 'active' : ''}`} 
+                                                        role="button" 
+                                                        tabIndex={0} 
+                                                        onClick={() => setHrSelectedAttendanceCategory({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}
+                                                        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Working Days', dates: misReportData.attendance.workingDaysDates })}
+                                                        style={{ 
+                                                            display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                            background: hrSelectedAttendanceCategory?.title === 'Working Days' ? '#eff6ff' : '#f9fafb', 
+                                                            borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                            border: hrSelectedAttendanceCategory?.title === 'Working Days' ? '1px solid #3b82f6' : '1px solid transparent'
+                                                        }}
+                                                    >
+                                                        <span style={{ fontWeight: '500', color: '#4b5563' }}>Working Days</span>
+                                                        <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.workingDays}</span>
+                                                    </div>
+                                                    <div 
+                                                        className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Present Days' ? 'active' : ''}`} 
+                                                        role="button" 
+                                                        tabIndex={0} 
+                                                        onClick={() => setHrSelectedAttendanceCategory({ title: 'Present Days', dates: misReportData.attendance.presentDates })}
+                                                        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Present Days', dates: misReportData.attendance.presentDates })}
+                                                        style={{ 
+                                                            display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                            background: hrSelectedAttendanceCategory?.title === 'Present Days' ? '#eff6ff' : '#f9fafb', 
+                                                            borderRadius: '10px', border: hrSelectedAttendanceCategory?.title === 'Present Days' ? '1px solid #3b82f6' : '1px solid #e5e7eb', 
+                                                            cursor: 'pointer', transition: 'all 0.2s' 
+                                                        }}
+                                                    >
+                                                        <span style={{ fontWeight: '500', color: '#4b5563' }}>Present</span>
+                                                        <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.daysPresent}</span>
+                                                    </div>
+                                                    {misReportData.attendance.otherStatusesBreakdown.map(({ status, count, dates }) => (
+                                                        <div 
+                                                            className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === `${status} Dates` ? 'active' : ''}`} 
+                                                            key={status} 
+                                                            role="button" 
+                                                            tabIndex={0} 
+                                                            onClick={() => setHrSelectedAttendanceCategory({ title: `${status} Dates`, dates })}
+                                                            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: `${status} Dates`, dates })}
+                                                            style={{ 
+                                                                display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                                background: hrSelectedAttendanceCategory?.title === `${status} Dates` ? '#eff6ff' : '#f9fafb', 
+                                                                borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                                border: hrSelectedAttendanceCategory?.title === `${status} Dates` ? '1px solid #3b82f6' : '1px solid transparent'
+                                                            }}
+                                                        >
+                                                            <span style={{ fontWeight: '500', color: '#4b5563' }}>{status}</span>
+                                                            <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{count}</span>
+                                                        </div>
+                                                    ))}
+                                                    {misReportData.attendance.notMarked > 0 && (
+                                                        <div 
+                                                            className={`detail-item clickable-detail ${hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? 'active' : ''}`} 
+                                                            role="button" 
+                                                            tabIndex={0} 
+                                                            onClick={() => setHrSelectedAttendanceCategory({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}
+                                                            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setHrSelectedAttendanceCategory({ title: 'Not Marked Dates', dates: misReportData.attendance.notMarkedDates })}
+                                                            style={{ 
+                                                                display: 'flex', justifyContent: 'space-between', padding: '12px 16px', 
+                                                                background: hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? '#eff6ff' : '#f9fafb', 
+                                                                borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s',
+                                                                border: hrSelectedAttendanceCategory?.title === 'Not Marked Dates' ? '1px solid #3b82f6' : '1px solid transparent'
+                                                            }}
+                                                        >
+                                                            <span style={{ fontWeight: '500', color: '#4b5563' }}>Not Marked</span>
+                                                            <span className="detail-value" style={{ fontWeight: '700', color: '#111827' }}>{misReportData.attendance.notMarked}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent' }}>
+                                        <p>Select an employee to view details</p>
+                                    </div>
+                                )}
+                            </aside>
+
+                            {/* RIGHT SIDE: Filters & Detailed Dates */}
+                            <main className="dashboard-content" style={{ flex: '1' }}>
+                                <div className="dashboard-card mis-filters" style={{ padding: '24px', marginBottom: '24px' }}>
+                                    <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#374151' }}>Filter Controls</h4>
+                                    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                                        <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
+                                            <label htmlFor="hr-select-employee" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Employee</label>
+                                            <select 
+                                                id="hr-select-employee" 
+                                                value={selectedMisEmployeeName} 
+                                                onChange={e => setSelectedMisEmployeeName(e.target.value)}
+                                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                            >
+                                                <option value="">-- Select Employee --</option>
+                                                {hrAllEmployees.map(name => <option key={name} value={name}>{name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
+                                            <label htmlFor="hr-select-period" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Period</label>
+                                            <select 
+                                                id="hr-select-period" 
+                                                value={selectedMisPeriod} 
+                                                onChange={e => setSelectedMisPeriod(e.target.value)}
+                                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                            >
+                                                {periodOptions.map(option => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </div>
-                                </>
-                            ) : (
-                                <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent' }}>
-                                    <p>Select an employee to view details</p>
                                 </div>
-                            )}
-                        </aside>
 
-                        {/* RIGHT SIDE: Filters & Detailed Dates */}
-                        <main className="dashboard-content" style={{ flex: '1' }}>
-                            <div className="dashboard-card mis-filters" style={{ padding: '24px', marginBottom: '24px' }}>
-                                <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#374151' }}>Filter Controls</h4>
-                                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                                    <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
-                                        <label htmlFor="hr-select-employee" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Employee</label>
-                                        <select 
-                                            id="hr-select-employee" 
-                                            value={selectedMisEmployeeName} 
-                                            onChange={e => setSelectedMisEmployeeName(e.target.value)}
-                                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
-                                        >
-                                            <option value="">-- Select Employee --</option>
-                                            {hrAllEmployees.map(name => <option key={name} value={name}>{name}</option>)}
-                                        </select>
+                                {selectedMisEmployeeName && misReportData ? (
+                                    hrSelectedAttendanceCategory ? (
+                                        <div className="dashboard-card" style={{ padding: '24px', minHeight: '400px', animation: 'fadeIn 0.3s ease-out' }}>
+                                            <h3 style={{ fontSize: '1.2rem', fontWeight: '700', marginBottom: '20px', borderBottom: '2px solid #f3f4f6', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                {hrSelectedAttendanceCategory.title}
+                                                <span style={{ background: '#6366f1', color: 'white', padding: '2px 10px', borderRadius: '12px', fontSize: '0.85rem' }}>{hrSelectedAttendanceCategory.dates.length}</span>
+                                            </h3>
+                                            <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '8px' }}>
+                                                <ul style={{ listStyle: 'none', padding: 0 }}>
+                                                    {hrSelectedAttendanceCategory.dates.length > 0 ? (
+                                                        [...hrSelectedAttendanceCategory.dates]
+                                                            .sort((a, b) => a.getTime() - b.getTime())
+                                                            .map((date, idx) => (
+                                                                <li key={idx} style={{ padding: '14px 0', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#6366f1' }}></div>
+                                                                    <span style={{ fontWeight: '500', color: '#374151', fontSize: '1rem' }}>{formatDateLong(date)}</span>
+                                                                </li>
+                                                            ))
+                                                    ) : (
+                                                        <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af' }}>
+                                                            <p>No dates recorded for this category.</p>
+                                                        </div>
+                                                    )}
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+                                            <div style={{ marginBottom: '16px', opacity: 0.5 }}><TodayIcon /></div>
+                                            <p style={{ fontSize: '1.1rem' }}>Select a category from the summary to view detailed dates</p>
+                                        </div>
+                                    )
+                                ) : selectedMisEmployeeName ? (
+                                    <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#ef4444' }}>
+                                        <h3>No attendance data found for this employee in the selected period.</h3>
                                     </div>
-                                    <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
-                                        <label htmlFor="hr-select-period" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Period</label>
-                                        <select 
-                                            id="hr-select-period" 
-                                            value={selectedMisPeriod} 
-                                            onChange={e => setSelectedMisPeriod(e.target.value)}
-                                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
-                                        >
-                                            {periodOptions.map(option => (
-                                                <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                </option>
-                                            ))}
-                                        </select>
+                                ) : (
+                                    <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent' }}>
+                                        <h3>Please select an employee to view their leave data.</h3>
+                                    </div>
+                                )}
+                            </main>
+                        </div>
+                    ) : (
+                        <div className="daily-summary-view">
+                            <div className="dashboard-card" style={{ padding: '24px', marginBottom: '24px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                                    <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700' }}>Daily Attendance Summary</h4>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <label htmlFor="hr-date-picker" style={{ fontWeight: '600', fontSize: '0.9rem', color: '#4b5563' }}>Select Date:</label>
+                                        <input 
+                                            id="hr-date-picker"
+                                            type="date" 
+                                            value={selectedHrDate} 
+                                            onChange={e => setSelectedHrDate(e.target.value)}
+                                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                        />
                                     </div>
                                 </div>
                             </div>
 
-                            {selectedMisEmployeeName && misReportData ? (
-                                hrSelectedAttendanceCategory ? (
-                                    <div className="dashboard-card" style={{ padding: '24px', minHeight: '400px', animation: 'fadeIn 0.3s ease-out' }}>
-                                        <h3 style={{ fontSize: '1.2rem', fontWeight: '700', marginBottom: '20px', borderBottom: '2px solid #f3f4f6', paddingBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            {hrSelectedAttendanceCategory.title}
-                                            <span style={{ background: '#6366f1', color: 'white', padding: '2px 10px', borderRadius: '12px', fontSize: '0.85rem' }}>{hrSelectedAttendanceCategory.dates.length}</span>
-                                        </h3>
-                                        <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '8px' }}>
-                                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                                                {hrSelectedAttendanceCategory.dates.length > 0 ? (
-                                                    [...hrSelectedAttendanceCategory.dates]
-                                                        .sort((a, b) => a.getTime() - b.getTime())
-                                                        .map((date, idx) => (
-                                                            <li key={idx} style={{ padding: '14px 0', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#6366f1' }}></div>
-                                                                <span style={{ fontWeight: '500', color: '#374151', fontSize: '1rem' }}>{formatDateLong(date)}</span>
-                                                            </li>
-                                                        ))
-                                                ) : (
-                                                    <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af' }}>
-                                                        <p>No dates recorded for this category.</p>
-                                                    </div>
-                                                )}
-                                            </ul>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
-                                        <div style={{ marginBottom: '16px', opacity: 0.5 }}><TodayIcon /></div>
-                                        <p style={{ fontSize: '1.1rem' }}>Select a category from the summary to view detailed dates</p>
-                                    </div>
-                                )
-                            ) : selectedMisEmployeeName ? (
-                                <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#ef4444' }}>
-                                    <h3>No attendance data found for this employee in the selected period.</h3>
+                            <div className="dashboard-card" style={{ padding: '0', overflow: 'hidden' }}>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table className="mis-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead style={{ background: '#f9fafb' }}>
+                                            <tr>
+                                                <th style={{ padding: '16px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', color: '#4b5563', fontWeight: '600' }}>Employee Name</th>
+                                                <th style={{ padding: '16px', textAlign: 'left', borderBottom: '1px solid #e5e7eb', color: '#4b5563', fontWeight: '600' }}>Email</th>
+                                                <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #e5e7eb', color: '#4b5563', fontWeight: '600' }}>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {dailySummaryData?.map((item, idx) => (
+                                                <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                    <td style={{ padding: '16px', fontWeight: '500' }}>{item.name}</td>
+                                                    <td style={{ padding: '16px', color: '#6b7280', fontSize: '0.9rem' }}>{item.email}</td>
+                                                    <td style={{ padding: '16px', textAlign: 'center' }}>
+                                                        <span style={{ 
+                                                            padding: '4px 12px', 
+                                                            borderRadius: '12px', 
+                                                            fontSize: '0.8rem', 
+                                                            fontWeight: '700',
+                                                            textTransform: 'uppercase',
+                                                            background: item.status === 'Present' ? '#dcfce7' : item.status === 'Leave' ? '#fee2e2' : item.status === 'On Official Travel' ? '#e0f2fe' : '#f3f4f6',
+                                                            color: item.status === 'Present' ? '#166534' : item.status === 'Leave' ? '#991b1b' : item.status === 'On Official Travel' ? '#0369a1' : '#4b5563'
+                                                        }}>
+                                                            {item.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {(!dailySummaryData || dailySummaryData.length === 0) && (
+                                                <tr>
+                                                    <td colSpan={3} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af' }}>No employee data available.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
-                            ) : (
-                                <div className="dashboard-card" style={{ padding: '40px', textAlign: 'center', color: '#9ca3af', border: '2px dashed #e5e7eb', background: 'transparent' }}>
-                                    <h3>Please select an employee to view their leave data.</h3>
-                                </div>
-                            )}
-                        </main>
-                    </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
