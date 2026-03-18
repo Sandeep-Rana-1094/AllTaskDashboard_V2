@@ -1116,7 +1116,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         // 2. WebSocket for Real-time Updates
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
+        const wsUrl = `${protocol}//${window.location.host}/api/presence`;
         const socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
@@ -1631,50 +1631,43 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (currentLeaveNames.has(personNameLower)) {
                 onLeave.push({ ...person, todayStatus: statusAbbr });
             }
-        });
 
-        for (const name in tasksByUserName) {
-            const personInfo = people.find(p => p.name === name);
-            if (!personInfo) {
-                continue; // Skip employees not in the active 'people' list
-            }
-
-            const personNameLower = name.toLowerCase().trim();
-            const todayStatus = todayAttendanceMap.get(personNameLower);
-            const statusAbbr = getStatusAbbreviation(todayStatus);
-
-            const userTasks = tasksByUserName[name];
-            if (userTasks.length === 0) continue;
-
-            const isNegative = userTasks.some(task => {
-                // Handle "Incoming NBD" special case
-                if (task.systemType === 'Incoming NBD') {
-                    return getNbdActualCount(task) < 5;
-                }
-                
-                // Regular task logic
-                const actualDate = parseDate(task.actual);
-                if (!actualDate) {
-                    return true; // Not completed -> Negative score
-                }
-                
-                const plannedDate = parseDate(task.planned);
-                if (plannedDate) {
-                    plannedDate.setHours(0, 0, 0, 0);
-                    actualDate.setHours(0, 0, 0, 0);
-                    if (actualDate.getTime() > plannedDate.getTime()) {
-                        return true; // Completed late -> Negative score
-                    }
-                }
-                return false; // Task was completed on time.
-            });
+            const userTasks = tasksByUserName[person.name];
             
-            if (isNegative) {
-                negativeScore.push({ ...personInfo, todayStatus: statusAbbr });
+            if (!userTasks || userTasks.length === 0) {
+                // If they have no tasks, they are "On Track" by default (no negative tasks)
+                onTrack.push({ ...person, todayStatus: statusAbbr });
             } else {
-                onTrack.push({ ...personInfo, todayStatus: statusAbbr });
+                const isNegative = userTasks.some(task => {
+                    // Handle "Incoming NBD" special case
+                    if (task.systemType === 'Incoming NBD') {
+                        return getNbdActualCount(task) < 5;
+                    }
+                    
+                    // Regular task logic
+                    const actualDate = parseDate(task.actual);
+                    if (!actualDate) {
+                        return true; // Not completed -> Negative score
+                    }
+                    
+                    const plannedDate = parseDate(task.planned);
+                    if (plannedDate) {
+                        plannedDate.setHours(0, 0, 0, 0);
+                        actualDate.setHours(0, 0, 0, 0);
+                        if (actualDate.getTime() > plannedDate.getTime()) {
+                            return true; // Completed late -> Negative score
+                        }
+                    }
+                    return false; // Task was completed on time.
+                });
+                
+                if (isNegative) {
+                    negativeScore.push({ ...person, todayStatus: statusAbbr });
+                } else {
+                    onTrack.push({ ...person, todayStatus: statusAbbr });
+                }
             }
-        }
+        });
         
         onTrack.sort((a, b) => a.name.localeCompare(b.name));
         negativeScore.sort((a, b) => a.name.localeCompare(b.name));
