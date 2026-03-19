@@ -267,6 +267,7 @@ const App = () => {
     const [allDashboardTasks, setAllDashboardTasks] = useState<DashboardTask[]>([]);
     const [attendanceData, setAttendanceData] = useState<AttendanceData[]>([]);
     const [dailyAttendanceData, setDailyAttendanceData] = useState<DailyAttendance[]>([]);
+    const [leftEmployeesData, setLeftEmployeesData] = useState<string[]>([]);
     const [currentLeaveData, setCurrentLeaveData] = useState<DailyAttendance[]>([]);
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
@@ -333,7 +334,8 @@ const App = () => {
         const masterUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Master Data')}&range=A:N`;
         const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=Working%20Task%20Form`;
         const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&range=J:K`;
-        const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT P, Q, R, U WHERE P IS NOT NULL AND Q IS NOT NULL')}`;
+        const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT N, P, Q, R, U WHERE P IS NOT NULL AND Q IS NOT NULL')}`;
+        const leftEmployeesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT X WHERE X IS NOT NULL')}`;
         const currentLeaveUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=I:K`;
         const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&range=S:T`;
         const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
@@ -560,14 +562,30 @@ const App = () => {
             try {
                 await fetchWithHandling(dailyAttendanceUrl, (csvText) => {
                     const parsedData: DailyAttendance[] = robustCsvParser(csvText).map(fields => ({
-                        date: (fields[0] || '').trim(), status: (fields[1] || '').trim(),
-                        name: (fields[2] || '').trim(), email: (fields[3] || '').trim().toLowerCase(),
-                    })).filter(item => item.name && item.date && item.status);
+                        empName: (fields[0] || '').trim(),
+                        date: (fields[1] || '').trim(), 
+                        status: (fields[2] || '').trim(),
+                        name: (fields[3] || '').trim(), 
+                        email: (fields[4] || '').trim().toLowerCase(),
+                    })).filter(item => (item.name || item.empName) && item.date && item.status);
                     setDailyAttendanceData(parsedData);
                 });
             } catch (err: any) {
                  console.error("Data fetch error (Daily Attendance):", err);
-                 setDailyAttendanceError('Failed to load Daily Attendance. Please ensure columns P (Date), Q (Status), R (Name), and U (Email) in the "Leaves" sheet are correctly formatted and the sheet is public.');
+                 setDailyAttendanceError('Failed to load Daily Attendance. Please ensure columns N, P, Q, R, U in the "Leaves" sheet are correctly formatted and the sheet is public.');
+            }
+            await sleep(250);
+
+            // 7.1 Fetch Left Employees
+            try {
+                await fetchWithHandling(leftEmployeesUrl, (csvText) => {
+                    const parsedData = robustCsvParser(csvText)
+                        .map(fields => (fields[0] || '').trim())
+                        .filter(name => name && name.toLowerCase() !== 'name');
+                    setLeftEmployeesData(parsedData);
+                });
+            } catch (err: any) {
+                 console.error("Data fetch error (Left Employees):", err);
             }
             await sleep(250);
 
@@ -760,6 +778,7 @@ const App = () => {
                             people={people}
                             attendanceData={attendanceData}
                             dailyAttendanceData={dailyAttendanceData}
+                            leftEmployeesData={leftEmployeesData}
                             currentLeaveData={currentLeaveData}
                             holidays={holidays}
                             taskHistory={taskHistory}
@@ -808,6 +827,7 @@ const App = () => {
                             people={people}
                             attendanceData={attendanceData}
                             dailyAttendanceData={dailyAttendanceData}
+                            leftEmployeesData={leftEmployeesData}
                             currentLeaveData={currentLeaveData}
                             holidays={holidays}
                             taskHistory={taskHistory}
