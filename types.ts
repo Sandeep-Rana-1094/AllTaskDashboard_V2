@@ -103,6 +103,7 @@ export interface DailyAttendance {
     status: string;
     name: string;
     email?: string;
+    empName?: string;
 }
 
 export interface TaskHistory {
