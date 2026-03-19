@@ -190,6 +190,7 @@ interface TaskDashboardSystemProps {
     people: Person[];
     attendanceData: AttendanceData[];
     dailyAttendanceData: DailyAttendance[];
+    leftEmployeesData: string[];
     currentLeaveData: DailyAttendance[];
     holidays: Holiday[];
     taskHistory: TaskHistory[];
@@ -900,6 +901,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     people,
     attendanceData,
     dailyAttendanceData,
+    leftEmployeesData,
     currentLeaveData,
     holidays,
     taskHistory,
@@ -1159,6 +1161,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [selectedMisEmployeeName, setSelectedMisEmployeeName] = useState<string | null>(null);
     const [selectedMisPeriod, setSelectedMisPeriod] = useState<string>('lastWeek');
     const [hrSubView, setHrSubView] = useState<'employee' | 'dailySummary'>('employee');
+    const [hrEmployeeStatusFilter, setHrEmployeeStatusFilter] = useState<'active' | 'left'>('active');
     const [selectedHrDate, setSelectedHrDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [misSubView, setMisSubView] = useState<'mis' | 'employee'>('mis');
     const [misEmployeeCurrentView, setMisEmployeeCurrentView] = useState<'stats' | 'calendar'>('stats');
@@ -1282,12 +1285,21 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (userEmailLower && attEmailLower) {
                 return attEmailLower === userEmailLower && att.date;
             }
-            return att.name.toLowerCase() === userNameLower && att.date;
+            return (att.name.toLowerCase() === userNameLower || att.empName?.toLowerCase() === userNameLower) && att.date;
         });
 
         const firstAttendanceDate = userAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0];
+        const lastAttendanceDate = userAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime())[0];
+        const isLeftEmployee = leftEmployeesData.some(name => name.toLowerCase() === userNameLower);
+
         const holidayDates = new Set(holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean));
         const today = new Date(); today.setHours(0, 0, 0, 0);
+
+        let endDate = today;
+        if (isLeftEmployee && lastAttendanceDate) {
+            lastAttendanceDate.setHours(0, 0, 0, 0);
+            endDate = new Date(Math.min(today.getTime(), lastAttendanceDate.getTime()));
+        }
 
         const workingDaysDates: Date[] = [];
         const notMarkedDates: Date[] = [];
@@ -1296,7 +1308,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         if (!firstAttendanceDate) {
             const d = new Date(periodStart);
-            while (d <= periodEnd && d <= today) {
+            while (d <= periodEnd && d <= endDate) {
                 const dayOfWeek = d.getDay();
                 const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const isHoliday = holidayDates.has(d.toDateString());
@@ -1327,7 +1339,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         });
 
         const loopDate = new Date(periodStart);
-        while (loopDate <= periodEnd && loopDate <= today) {
+        while (loopDate <= periodEnd && loopDate <= endDate) {
             if (loopDate >= firstAttendanceDate) {
                 const dayOfWeek = loopDate.getDay();
                 const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -1713,10 +1725,13 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const attendanceBreakdown = (() => {
             const employeeAttendanceRecords = dailyAttendanceData.filter(att => {
                 if (email && att.email) return att.email.toLowerCase() === email && att.date;
-                return att.name.toLowerCase() === selectedNameLower && att.date;
+                return (att.name.toLowerCase() === selectedNameLower || att.empName?.toLowerCase() === selectedNameLower) && att.date;
             });
     
             const firstAttendanceDate = employeeAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0]; 
+            const lastAttendanceDate = employeeAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime())[0];
+            const isLeftEmployee = leftEmployeesData.some(name => name.toLowerCase() === selectedNameLower);
+
             const holidayDates = new Set(holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean));
     
             const workingDaysDates: Date[] = [];
@@ -1724,10 +1739,16 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const statusDatesMap = new Map<string, Date[]>();
             let workingDaysCount = 0;
             const today = new Date(); today.setHours(0, 0, 0, 0);
+            
+            let endDate = today;
+            if (isLeftEmployee && lastAttendanceDate) {
+                lastAttendanceDate.setHours(0, 0, 0, 0);
+                endDate = new Date(Math.min(today.getTime(), lastAttendanceDate.getTime()));
+            }
     
             if (!firstAttendanceDate) {
                 const d = new Date(periodStart);
-                while (d <= periodEnd && d <= today) {
+                while (d <= periodEnd && d <= endDate) {
                     const dayOfWeek = d.getDay();
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(d.toDateString());
@@ -1749,7 +1770,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             });
     
             const loopDate = new Date(periodStart);
-            while (loopDate <= periodEnd && loopDate <= today) {
+            while (loopDate <= periodEnd && loopDate <= endDate) {
                 if (loopDate >= firstAttendanceDate) {
                     const dayOfWeek = loopDate.getDay();
                     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -1895,7 +1916,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             lateTasks: finalLateTasks,
             dateRange: dateRangeStr
         };
-    }, [selectedMisEmployeeName, misWeekdayTasks, people, dailyAttendanceData, selectedMisPeriod, holidays, PRESENT_STATUSES]);
+    }, [selectedMisEmployeeName, misWeekdayTasks, people, dailyAttendanceData, selectedMisPeriod, holidays, PRESENT_STATUSES, hrEmployeeStatusFilter]);
 
      // --- New Calculations for Admin's "Employee View" ---
     const misEmployeeViewData = useMemo(() => {
@@ -1914,16 +1935,26 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const attendanceBreakdown = (() => {
             const userAttendanceRecords = dailyAttendanceData.filter(att => {
                 if (email && att.email) return att.email.toLowerCase() === email && att.date;
-                return att.name.toLowerCase() === selectedNameLower && att.date;
+                return (att.name.toLowerCase() === selectedNameLower || att.empName?.toLowerCase() === selectedNameLower) && att.date;
             });
             const firstAttendanceDate = userAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0];
+            const lastAttendanceDate = userAttendanceRecords.map(att => parseDate(att.date)).filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime())[0];
+            const isLeftEmployee = leftEmployeesData.some(name => name.toLowerCase() === selectedNameLower);
+
             const holidayDates = new Set(holidays.map(h => parseDate(h.date)?.toDateString()).filter(Boolean));
             const today = new Date(); today.setHours(0, 0, 0, 0);
+            
+            let endDate = today;
+            if (isLeftEmployee && lastAttendanceDate) {
+                lastAttendanceDate.setHours(0, 0, 0, 0);
+                endDate = new Date(Math.min(today.getTime(), lastAttendanceDate.getTime()));
+            }
+
             const workingDaysDates: Date[] = []; const notMarkedDates: Date[] = [];
             const statusDatesMap = new Map<string, Date[]>(); let workingDaysCount = 0;
             if (!firstAttendanceDate) {
                 const d = new Date(periodStart);
-                while (d <= periodEnd && d <= today) {
+                while (d <= periodEnd && d <= endDate) {
                     const dayOfWeek = d.getDay(); const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(d.toDateString());
                     if (!isWeekend && !isHoliday) { workingDaysCount++; workingDaysDates.push(new Date(d)); notMarkedDates.push(new Date(d)); }
@@ -1934,7 +1965,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             firstAttendanceDate.setHours(0, 0, 0, 0); const attendanceMap = new Map<string, string>();
             userAttendanceRecords.forEach(att => { const d = parseDate(att.date); if (d) attendanceMap.set(d.toDateString(), att.status); });
             const loopDate = new Date(periodStart);
-            while (loopDate <= periodEnd && loopDate <= today) {
+            while (loopDate <= periodEnd && loopDate <= endDate) {
                 if (loopDate >= firstAttendanceDate) {
                     const dayOfWeek = loopDate.getDay(); const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const isHoliday = holidayDates.has(loopDate.toDateString());
@@ -2040,7 +2071,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         })();
 
         return { employeeDetails, attendance: attendanceBreakdown, kpis: kpiData, monthlyNbdCounts: employeeMonthlyNbdCounts };
-    }, [selectedMisEmployeeName, misWeekdayTasks, dailyAttendanceData, holidays, people]);
+    }, [selectedMisEmployeeName, misWeekdayTasks, dailyAttendanceData, holidays, people, hrEmployeeStatusFilter]);
 
 
     const allEmployees = useMemo(() => {
@@ -2050,8 +2081,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [negativeScoreEmployees, onTrackEmployees, onLeaveEmployees]);
 
     const hrAllEmployees = useMemo(() => {
+        if (hrEmployeeStatusFilter === 'left') {
+            return [...leftEmployeesData].sort();
+        }
         return people.map(p => p.name).sort();
-    }, [people]);
+    }, [people, leftEmployeesData, hrEmployeeStatusFilter]);
 
     const dailySummaryData = useMemo(() => {
         if (dashboardMode !== 'hrLeaves' || hrSubView !== 'dailySummary') return null;
@@ -2060,21 +2094,42 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         targetDate.setHours(0, 0, 0, 0);
         const targetDateStr = targetDate.toDateString();
 
-        const summary = people.map(p => {
-            const attendance = dailyAttendanceData.find(att => {
-                const attDate = parseDate(att.date);
-                return attDate && attDate.toDateString() === targetDateStr && att.name.toLowerCase() === p.name.toLowerCase();
+        const employeesList = hrEmployeeStatusFilter === 'left' 
+            ? leftEmployeesData.map(name => ({ name, email: '' }))
+            : people;
+
+        const summary = employeesList.map(p => {
+            const employeeRecords = dailyAttendanceData.filter(att => {
+                return (att.name.toLowerCase() === p.name.toLowerCase() || att.empName?.toLowerCase() === p.name.toLowerCase()) && att.date;
             });
+
+            const attendance = employeeRecords.find(att => {
+                const attDate = parseDate(att.date);
+                return attDate && attDate.toDateString() === targetDateStr;
+            });
+
+            let status = attendance ? attendance.status : 'Not Marked';
+
+            if (!attendance && hrEmployeeStatusFilter === 'left') {
+                const lastAttendanceDate = employeeRecords
+                    .map(att => parseDate(att.date))
+                    .filter((d): d is Date => d !== null)
+                    .sort((a, b) => b.getTime() - a.getTime())[0];
+                
+                if (lastAttendanceDate && targetDate > lastAttendanceDate) {
+                    status = `Left (Last Day: ${formatDateForRange(lastAttendanceDate)})`;
+                }
+            }
 
             return {
                 name: p.name,
                 email: p.email,
-                status: attendance ? attendance.status : 'Not Marked'
+                status
             };
         });
 
         return summary;
-    }, [dashboardMode, hrSubView, selectedHrDate, people, dailyAttendanceData]);
+    }, [dashboardMode, hrSubView, selectedHrDate, people, dailyAttendanceData, hrEmployeeStatusFilter, leftEmployeesData]);
 
     const { filteredPendingTasks, tableTitle } = useMemo(() => {
         let tasksToFilter: DashboardTask[];
@@ -2392,9 +2447,22 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 <div className="hr-leaves-view" style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                         <h3 className="mis-view-title" style={{ margin: 0 }}>Leaves Dashboard</h3>
-                        <div className="dashboard-tabs" style={{ margin: 0 }}>
-                            <button onClick={() => setHrSubView('employee')} className={hrSubView === 'employee' ? 'active' : ''}>Employee View</button>
-                            <button onClick={() => setHrSubView('dailySummary')} className={hrSubView === 'dailySummary' ? 'active' : ''}>Daily Summary</button>
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                            <select 
+                                value={hrEmployeeStatusFilter} 
+                                onChange={(e) => {
+                                    setHrEmployeeStatusFilter(e.target.value as 'active' | 'left');
+                                    setSelectedMisEmployeeName(''); // Reset selected employee when filter changes
+                                }}
+                                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.9rem', backgroundColor: '#fff' }}
+                            >
+                                <option value="active">Active Employees</option>
+                                <option value="left">Left Employees</option>
+                            </select>
+                            <div className="dashboard-tabs" style={{ margin: 0 }}>
+                                <button onClick={() => setHrSubView('employee')} className={hrSubView === 'employee' ? 'active' : ''}>Employee View</button>
+                                <button onClick={() => setHrSubView('dailySummary')} className={hrSubView === 'dailySummary' ? 'active' : ''}>Daily Summary</button>
+                            </div>
                         </div>
                     </div>
 
