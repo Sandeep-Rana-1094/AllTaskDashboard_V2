@@ -1264,9 +1264,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             userTaskWithInfo?.userName?.trim() ||
             personInfo?.name ||
             getUserNameFromEmail(userEmail);
-        const rawPhotoUrl = 
-            userTaskWithInfo?.photoUrl?.trim() ||
-            personInfo?.photoUrl;
+        const rawPhotoUrl = personInfo?.photoUrl;
         
         return {
             userName: derivedUserName,
@@ -1716,7 +1714,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const taskInfo = misWeekdayTasks.find(t => t.userName.toLowerCase() === selectedNameLower);
 
         const email = (personInfo?.email || taskInfo?.userEmail || '').toLowerCase();
-        const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl || taskInfo?.photoUrl);
+        const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl);
         
         const { start: periodStart, end: periodEnd } = getPeriodDateRange(selectedMisPeriod);
         const dateRangeStr = `(${formatDateForRange(periodStart)} - ${formatDateForRange(periodEnd)})`;
@@ -1927,7 +1925,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         const personInfo = people.find(p => p.name.toLowerCase() === selectedNameLower);
         const taskInfo = misWeekdayTasks.find(t => t.userName.toLowerCase() === selectedNameLower);
         const email = (personInfo?.email || taskInfo?.userEmail || '').toLowerCase();
-        const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl || taskInfo?.photoUrl);
+        const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl);
         const employeeDetails = { name: selectedMisEmployeeName, email, photoUrl };
 
         // --- Attendance ---
