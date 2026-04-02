@@ -378,7 +378,7 @@ const App = () => {
                     const parsedData = robustCsvParser(csvText);
                     const parsedPeople: Person[] = parsedData.map(fields => {
                         let name = (fields[0] || '').trim(); // Column B
-                        const email = (fields[4] || '').trim(); // Column F
+                        const email = (fields[4] || fields[1] || '').trim(); // Column F (Gmail Id) fallback to Column C (Email)
                         const status = (fields[6] || '').trim(); // Column H
                         const emailLower = email.toLowerCase();
                         const photoUrl = photoUrlMap.get(emailLower) || (fields[15] || '').trim(); // Column Q fallback
