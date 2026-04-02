@@ -330,6 +330,7 @@ const App = () => {
 
         // URLs for fetching data
         const peopleUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Employee%20Data&range=B:Q`;
+        const nameFormatUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Name formate')}&range=E:I`;
         const checklistUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Task&range=A:J`;
         const masterUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Master Data')}&range=A:N`;
         const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=Working%20Task%20Form`;
@@ -353,6 +354,24 @@ const App = () => {
         try {
             // --- SEQUENTIAL FETCHING TO PREVENT RATE-LIMITING ---
 
+            // 0. Fetch Name Formate for Images
+            const photoUrlMap = new Map<string, string>();
+            try {
+                await fetchWithHandling(nameFormatUrl, (csvText) => {
+                    const parsedData = robustCsvParser(csvText);
+                    parsedData.forEach(fields => {
+                        const email = (fields[4] || '').trim().toLowerCase(); // Column I (index 4 in E:I)
+                        const photoUrl = (fields[1] || '').trim(); // Column F (index 1 in E:I)
+                        if (email && photoUrl) {
+                            photoUrlMap.set(email, photoUrl);
+                        }
+                    });
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Name formate):", err);
+            }
+            await sleep(250);
+
             // 1. Fetch People
             try {
                 await fetchWithHandling(peopleUrl, (csvText) => {
@@ -361,7 +380,8 @@ const App = () => {
                         let name = (fields[0] || '').trim(); // Column B
                         const email = (fields[4] || '').trim(); // Column F
                         const status = (fields[6] || '').trim(); // Column H
-                        const photoUrl = (fields[15] || '').trim(); // Column Q
+                        const emailLower = email.toLowerCase();
+                        const photoUrl = photoUrlMap.get(emailLower) || (fields[15] || '').trim(); // Column Q fallback
                         if (!name && email) {
                             const namePart = email.split('@')[0];
                             name = namePart.replace(/[._-]/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
