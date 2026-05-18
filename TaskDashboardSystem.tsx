@@ -73,18 +73,33 @@ const getMondayOfNWeeksAgo = (weeksAgo: number): Date => {
     return targetMonday;
 };
 
+const isWorkingDateException = (date: Date): boolean => {
+    // Specifically make Saturday, May 23, 2026 a working day
+    return date.getFullYear() === 2026 && date.getMonth() === 4 && date.getDate() === 23;
+};
+
+const isHolidayException = (date: Date): boolean => {
+    // Specifically make Friday, May 15, 2026 a leave/holiday
+    return date.getFullYear() === 2026 && date.getMonth() === 4 && date.getDate() === 15;
+};
+
+const checkIsWeekend = (date: Date): boolean => {
+    const dayOfWeek = date.getDay();
+    return (dayOfWeek === 0 || dayOfWeek === 6) && !isWorkingDateException(date);
+};
+
 const getPreviousWeekRange = () => {
     const lastMonday = getMondayOfNWeeksAgo(1);
-    const lastFriday = new Date(lastMonday);
-    lastFriday.setDate(lastMonday.getDate() + 4); // Monday to Friday
-    return { start: lastMonday, end: lastFriday };
+    const lastSunday = new Date(lastMonday);
+    lastSunday.setDate(lastMonday.getDate() + 6); // Monday to Sunday
+    return { start: lastMonday, end: lastSunday };
 };
 
 const getCurrentWeekRange = () => {
     const thisMonday = getMondayOfNWeeksAgo(0);
-    const thisFriday = new Date(thisMonday);
-    thisFriday.setDate(thisMonday.getDate() + 4); // Monday to Friday
-    return { start: thisMonday, end: thisFriday };
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6); // Monday to Sunday
+    return { start: thisMonday, end: thisSunday };
 };
 
 const getPeriodDateRange = (period: string): { start: Date; end: Date } => {
@@ -94,9 +109,9 @@ const getPeriodDateRange = (period: string): { start: Date; end: Date } => {
 
     if (period === 'lastToLastWeek') {
         const lastLastMonday = getMondayOfNWeeksAgo(2);
-        const lastLastFriday = new Date(lastLastMonday);
-        lastLastFriday.setDate(lastLastMonday.getDate() + 4);
-        return { start: lastLastMonday, end: lastLastFriday };
+        const lastLastSunday = new Date(lastLastMonday);
+        lastLastSunday.setDate(lastLastMonday.getDate() + 6); // Monday to Sunday
+        return { start: lastLastMonday, end: lastLastSunday };
     }
 
     if (period.startsWith('year-')) {
@@ -662,9 +677,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                     
                     const attendanceStatus = userAttendanceByDate.get(dateKey);
                     
-                    const dayOfWeek = day.getDay(); // 0 = Sunday, 6 = Saturday
-                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                    const holidayName = holidaysMap.get(day.toDateString());
+                    const isWeekend = checkIsWeekend(day);
+                    let holidayName = holidaysMap.get(day.toDateString());
+                    if (isHolidayException(day)) holidayName = 'Leave (Shifted)';
 
                     let content = null;
 
@@ -1308,8 +1323,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const d = new Date(periodStart);
             while (d <= periodEnd && d <= endDate) {
                 const dayOfWeek = d.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                const isHoliday = holidayDates.has(d.toDateString());
+                const isWeekend = checkIsWeekend(d);
+                const isHoliday = holidayDates.has(d.toDateString()) || isHolidayException(d);
                 if (!isWeekend && !isHoliday) {
                     workingDaysCount++;
                     workingDaysDates.push(new Date(d));
@@ -1340,8 +1355,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         while (loopDate <= periodEnd && loopDate <= endDate) {
             if (loopDate >= firstAttendanceDate) {
                 const dayOfWeek = loopDate.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                const isHoliday = holidayDates.has(loopDate.toDateString());
+                const isWeekend = checkIsWeekend(loopDate);
+                const isHoliday = holidayDates.has(loopDate.toDateString()) || isHolidayException(loopDate);
 
                 if (!isWeekend && !isHoliday) {
                     workingDaysCount++;
@@ -1748,8 +1763,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 const d = new Date(periodStart);
                 while (d <= periodEnd && d <= endDate) {
                     const dayOfWeek = d.getDay();
-                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                    const isHoliday = holidayDates.has(d.toDateString());
+                    const isWeekend = checkIsWeekend(d);
+                    const isHoliday = holidayDates.has(d.toDateString()) || isHolidayException(d);
                     if (!isWeekend && !isHoliday) {
                         workingDaysCount++;
                         workingDaysDates.push(new Date(d));
@@ -1771,8 +1786,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             while (loopDate <= periodEnd && loopDate <= endDate) {
                 if (loopDate >= firstAttendanceDate) {
                     const dayOfWeek = loopDate.getDay();
-                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                    const isHoliday = holidayDates.has(loopDate.toDateString());
+                    const isWeekend = checkIsWeekend(loopDate);
+                    const isHoliday = holidayDates.has(loopDate.toDateString()) || isHolidayException(loopDate);
     
                     if (!isWeekend && !isHoliday) {
                         workingDaysCount++;
@@ -1953,8 +1968,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (!firstAttendanceDate) {
                 const d = new Date(periodStart);
                 while (d <= periodEnd && d <= endDate) {
-                    const dayOfWeek = d.getDay(); const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                    const isHoliday = holidayDates.has(d.toDateString());
+                    const dayOfWeek = d.getDay(); const isWeekend = checkIsWeekend(d);
+                    const isHoliday = holidayDates.has(d.toDateString()) || isHolidayException(d);
                     if (!isWeekend && !isHoliday) { workingDaysCount++; workingDaysDates.push(new Date(d)); notMarkedDates.push(new Date(d)); }
                     d.setDate(d.getDate() + 1);
                 }
@@ -1965,8 +1980,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             const loopDate = new Date(periodStart);
             while (loopDate <= periodEnd && loopDate <= endDate) {
                 if (loopDate >= firstAttendanceDate) {
-                    const dayOfWeek = loopDate.getDay(); const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                    const isHoliday = holidayDates.has(loopDate.toDateString());
+                    const dayOfWeek = loopDate.getDay(); const isWeekend = checkIsWeekend(loopDate);
+                    const isHoliday = holidayDates.has(loopDate.toDateString()) || isHolidayException(loopDate);
                     if (!isWeekend && !isHoliday) {
                         workingDaysCount++; workingDaysDates.push(new Date(loopDate)); const status = attendanceMap.get(loopDate.toDateString());
                         if (status) { if (!statusDatesMap.has(status)) statusDatesMap.set(status, []); statusDatesMap.get(status)!.push(new Date(loopDate));
