@@ -401,11 +401,18 @@ const LiveUsersModal: React.FC<{
 
 const AttachmentModal: React.FC<{
     task: DashboardTask | null; onClose: () => void;
-    onSubmit: (file: File) => void; isSubmitting: boolean;
+    onSubmit: (file: File | null, remark?: string) => void; isSubmitting: boolean;
 }> = ({ task, onClose, onSubmit, isSubmitting }) => {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    useEffect(() => { setSelectedFile(null); }, [task]);
+    const [remark, setRemark] = useState('');
+    
+    useEffect(() => { 
+        setSelectedFile(null); 
+        setRemark('');
+    }, [task]);
+    
     if (!task) return null;
+    
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files ? e.target.files[0] : null;
         if (file) {
@@ -415,21 +422,45 @@ const AttachmentModal: React.FC<{
             } else { setSelectedFile(file); }
         }
     };
-    const handleSubmit = () => { if (selectedFile) onSubmit(selectedFile); };
+    
+    const handleSubmit = () => { 
+        if (selectedFile || remark.trim() !== '') onSubmit(selectedFile, remark.trim()); 
+    };
+
+    const canSubmit = selectedFile || remark.trim() !== '';
+
     return (
         <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="attachment-modal-title">
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <h2 id="attachment-modal-title">Submit Task with Attachment</h2>
+                <h2 id="attachment-modal-title">Submit Task with Attachment or Remark</h2>
                 <p><strong>Task:</strong> {task.task}</p>
                 <div className="modal-form">
                     <div className="form-group">
-                        <label htmlFor="attachment-file">Upload Document (Required)</label>
-                        <input id="attachment-file" type="file" onChange={handleFileChange} required />
+                        <label htmlFor="attachment-file" style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Upload Document (Optional)</label>
+                        <input id="attachment-file" type="file" onChange={handleFileChange} className="form-control" style={{ width: '100%', padding: '8px', cursor: 'pointer' }} />
                         {selectedFile && <p style={{ marginTop: '8px', fontSize: '0.9em', color: '#6b7280' }}>Selected: {selectedFile.name}</p>}
                     </div>
-                    <div className="modal-actions">
+                    
+                    <div className="form-group" style={{ marginTop: '16px' }}>
+                        <label htmlFor="attachment-remark" style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Add Remark (Optional)</label>
+                        <textarea 
+                            id="attachment-remark" 
+                            className="form-control"
+                            value={remark} 
+                            onChange={(e) => setRemark(e.target.value)} 
+                            rows={3} 
+                            placeholder="Enter your remarks here..."
+                            style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db', resize: 'vertical' }}
+                        ></textarea>
+                    </div>
+
+                    <div style={{ marginTop: '8px', fontSize: '0.85em', color: '#6b7280', fontStyle: 'italic' }}>
+                        Please upload a document OR add a remark to mark this task as done.
+                    </div>
+
+                    <div className="modal-actions" style={{ marginTop: '20px' }}>
                         <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>Cancel</button>
-                        <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={!selectedFile || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Done'}</button>
+                        <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Done'}</button>
                     </div>
                 </div>
             </div>
@@ -2188,7 +2219,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         setSelectedTaskIds(new Set());
     }, [filterMode, searchTerm]);
     
-    const submitTaskAsDone = async (task: DashboardTask, file: File | null) => {
+    const submitTaskAsDone = async (task: DashboardTask, file: File | null, remark?: string) => {
         if (!task.taskId) {
             alert("Cannot mark task as done: Missing Task ID.");
             return;
@@ -2196,12 +2227,14 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     
         setInFlightTaskIds(prev => new Set(prev).add(task.id));
     
-        if (file) setIsSubmitting(true);
+        if (file || remark) setIsSubmitting(true);
     
         try {
             const postData: {
                 action: string; sheetName: string; newData: Record<string, any>;
                 historyRecord: Record<string, any>; attachment?: { fileName: string; mimeType: string; content: string };
+                remark?: string;
+                Document?: string;
             } = {
                 action: 'create', sheetName: 'Done Task Status',
                 newData: {
@@ -2209,22 +2242,41 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     'Planned': task.planned.split(' ')[0], 'Timestamp': formatDateToDDMMYYYY(new Date()),
                     'DOER NAME': task.userName || task.name, 
                     'Marked Done By': authenticatedUser?.mailId,
-                    'Login ID': authenticatedUser?.mailId,
+                    'Login ID': authenticatedUser?.mailId
                 },
                 historyRecord: {
                     systemType: 'Dashboard', task: `Task ID: ${task.taskId}`,
                     changedBy: authenticatedUser?.mailId,
-                    change: `Marked Done on ${new Date().toLocaleString()}${file ? ` with attachment ${file.name}` : ''}`
+                    change: `Marked Done on ${new Date().toLocaleString()}${file ? ` with attachment ${file.name}` : ''}${remark ? ` with remark` : ''}`
                 }
             };
-    
+            
+            if (remark && remark.trim() !== '') {
+                const r = remark.trim();
+                postData.remark = r;
+                postData.Document = r;
+                postData.newData['Document'] = r;
+                postData.newData['Remark'] = r;
+                postData.newData['Remarks'] = r;
+                postData.newData['Document Link'] = r;
+                postData.newData['Link'] = r;
+                postData.newData['Attachment'] = r;
+                postData.newData['Attachment URL'] = r;
+                postData.newData['Attachment Url'] = r;
+                postData.newData['Uploaded Document'] = r;
+                postData.newData['Upload Document'] = r;
+                postData.newData['Actual'] = r;
+                postData.newData['ACTUAL'] = r;
+            }
+            
             if (file) {
                 const base64String = await fileToBase64(file);
                 postData.attachment = { fileName: file.name, mimeType: file.type, content: base64String };
             }
     
             await postToGoogleSheet(postData);
-            if (file) setAttachmentModalTask(null);
+
+            if (file || remark) setAttachmentModalTask(null);
         } catch (error) {
             console.error("Failed to mark task as done:", error);
             if (error instanceof Error) alert(`Error marking task as done: ${error.message}`);
@@ -2236,11 +2288,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 return newSet;
             });
         } finally {
-            if (file) setIsSubmitting(false);
+            if (file || remark) setIsSubmitting(false);
         }
     };
 
-    const submitReDoneTaskWithAttachment = async (task: DashboardTask, file: File) => {
+    const submitReDoneTaskWithAttachment = async (task: DashboardTask, file: File | null, remark?: string) => {
         if (!task.taskId) {
             alert("Cannot mark task as re-done: Missing Task ID.");
             return;
@@ -2251,28 +2303,55 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         setIsSubmitting(true);
         try {
-            const base64String = await fileToBase64(file);
-            const postData = {
+            const postData: {
+                action: string; sheetName: string; newData: Record<string, any>;
+                historyRecord: Record<string, any>; attachment?: { fileName: string; mimeType: string; content: string };
+                remark?: string;
+                Document?: string;
+            } = {
                 action: 'create', sheetName: 'Done Task Status',
                 newData: {
                     'Task ID': task.taskId, 'System Type': task.systemType, 'TASK': task.task,
                     'Planned': task.planned.split(' ')[0], 'Timestamp': formatDateToDDMMYYYY(new Date()),
                     'DOER NAME': task.userName || task.name,
                     'Marked Done By': authenticatedUser?.mailId,
-                    'Login ID': authenticatedUser?.mailId,
+                    'Login ID': authenticatedUser?.mailId
                 },
                 historyRecord: {
                     systemType: 'Dashboard', task: `Task ID: ${task.taskId}`,
                     changedBy: authenticatedUser?.mailId,
-                    change: `Marked Re-Done on ${new Date().toLocaleString()} with attachment ${file.name}`
-                },
-                attachment: { fileName: file.name, mimeType: file.type, content: base64String }
+                    change: `Marked Re-Done on ${new Date().toLocaleString()}${file ? ` with attachment ${file.name}` : ''}${remark ? ` with remark` : ''}`
+                }
             };
+            
+            if (remark && remark.trim() !== '') {
+                const r = remark.trim();
+                postData.remark = r;
+                postData.Document = r;
+                postData.newData['Document'] = r;
+                postData.newData['Remark'] = r;
+                postData.newData['Remarks'] = r;
+                postData.newData['Document Link'] = r;
+                postData.newData['Link'] = r;
+                postData.newData['Attachment'] = r;
+                postData.newData['Attachment URL'] = r;
+                postData.newData['Attachment Url'] = r;
+                postData.newData['Uploaded Document'] = r;
+                postData.newData['Upload Document'] = r;
+                postData.newData['Actual'] = r;
+                postData.newData['ACTUAL'] = r;
+            }
+
+            if (file) {
+                const base64String = await fileToBase64(file);
+                postData.attachment = { fileName: file.name, mimeType: file.type, content: base64String };
+            }
+
             await postToGoogleSheet(postData);
             // 'submittedIds' was undefined. The cleanup is now handled by the useEffect watching dashboardTasks.
             setAttachmentModalTask(null);
         } catch (error) {
-            console.error("Failed to mark task as re-done with attachment:", error);
+            console.error("Failed to mark task as re-done:", error);
             if (error instanceof Error) alert(`Error marking task as re-done: ${error.message}`);
             else alert(`An unknown error occurred while marking task as re-done.`);
 
@@ -2293,12 +2372,12 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         else submitTaskAsDone(task, null);
     };
     
-    const handleModalSubmit = (file: File) => {
+    const handleModalSubmit = (file: File | null, remark?: string) => {
         if (attachmentModalTask) {
             if (attachmentModalTask.actual && attachmentModalTask.actual.trim() !== '') {
-                submitReDoneTaskWithAttachment(attachmentModalTask, file);
+                submitReDoneTaskWithAttachment(attachmentModalTask, file, remark);
             } else {
-                submitTaskAsDone(attachmentModalTask, file);
+                submitTaskAsDone(attachmentModalTask, file, remark);
             }
         }
     };
