@@ -1413,7 +1413,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             if (PRESENT_STATUSES.includes(status.toLowerCase())) {
                 presentCount += dates.length;
                 presentDates.push(...dates);
-            } else {
+            }
+            if (status.toLowerCase() !== 'present') {
                 otherStatusesBreakdown.push({ status, count: dates.length, dates });
             }
         }
@@ -1843,7 +1844,8 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 if (PRESENT_STATUSES.includes(status.toLowerCase())) {
                     presentCount += dates.length;
                     presentDates.push(...dates);
-                } else {
+                }
+                if (status.toLowerCase() !== 'present') {
                     otherStatusesBreakdown.push({ status, count: dates.length, dates });
                 }
             }
@@ -2024,8 +2026,13 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             let presentCount = 0; const presentDates: Date[] = [];
             const otherStatusesBreakdown: { status: string; count: number; dates: Date[] }[] = [];
             for (const [status, dates] of statusDatesMap.entries()) {
-                if (PRESENT_STATUSES.includes(status.toLowerCase())) { presentCount += dates.length; presentDates.push(...dates);
-                } else { otherStatusesBreakdown.push({ status, count: dates.length, dates }); }
+                if (PRESENT_STATUSES.includes(status.toLowerCase())) { 
+                    presentCount += dates.length; 
+                    presentDates.push(...dates);
+                }
+                if (status.toLowerCase() !== 'present') { 
+                    otherStatusesBreakdown.push({ status, count: dates.length, dates }); 
+                }
             }
             otherStatusesBreakdown.sort((a,b) => a.status.localeCompare(b.status));
             const percentage = workingDaysCount > 0 ? Math.min(Math.round((presentCount / workingDaysCount) * 100), 100) : 0;
