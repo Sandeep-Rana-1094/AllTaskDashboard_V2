@@ -84,6 +84,7 @@ export interface UserAuth extends AuthenticatedUser {
 export interface Person {
     name: string;
     email?: string;
+    secondaryEmail?: string;
     photoUrl?: string;
     status?: string;
 }
