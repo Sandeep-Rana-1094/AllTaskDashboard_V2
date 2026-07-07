@@ -955,7 +955,9 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 }) => {
     const isSuperAdmin = authenticatedUser?.role === 'Super Admin';
     const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
+    const isManager = authenticatedUser?.role === 'Manager';
     const isHr = authenticatedUser?.role === 'HR';
+    const canViewMIS = isAdmin || isManager;
     const [dashboardMode, setDashboardMode] = useState<'myDashboard' | 'employeeMIS' | 'hrLeaves'>(isHr ? 'hrLeaves' : 'myDashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'overdue' | 'today'>('all');
@@ -1242,19 +1244,41 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     
     // Filter out tasks planned on Sundays from all calculations for "Employee MIS".
     const misWeekdayTasks = useMemo(() => {
-        return misTasks.filter(task => {
+        const sourceTasks = (() => {
+            if (isAdmin) return misTasks;
+            if (isManager && authenticatedUser?.teamEmails) {
+                const lowerTeamEmails = authenticatedUser.teamEmails.map(e => e.toLowerCase());
+                return misTasks.filter(t => t.userEmail && lowerTeamEmails.includes(t.userEmail.toLowerCase()));
+            }
+            return [];
+        })();
+        
+        return sourceTasks.filter(task => {
             const plannedDate = parseDate(task.planned);
             if (!plannedDate) return true; // Keep if date is invalid
             const day = plannedDate.getDay();
             return day !== 0; // Exclude Sunday (0)
         });
-    }, [misTasks]);
+    }, [misTasks, isAdmin, isManager, authenticatedUser]);
+
+    const teamPeople = useMemo(() => {
+        if (isAdmin || isHr) return people;
+        if (isManager && authenticatedUser?.teamEmails) {
+            const lowerTeamEmails = authenticatedUser.teamEmails.map(e => e.toLowerCase());
+            return people.filter(p => {
+                const e1 = p.email?.toLowerCase();
+                const e2 = p.secondaryEmail?.toLowerCase();
+                return (e1 && lowerTeamEmails.includes(e1)) || (e2 && lowerTeamEmails.includes(e2));
+            });
+        }
+        return [];
+    }, [people, isAdmin, isHr, isManager, authenticatedUser]);
 
     useEffect(() => {
-        if (!isAdmin) {
+        if (!canViewMIS && !isHr) {
             setDashboardMode('myDashboard');
         }
-    }, [isAdmin]);
+    }, [canViewMIS, isHr]);
     
     useEffect(() => {
         // When the task list is updated from the parent, clean up the in-flight set.
@@ -1680,7 +1704,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         // Identify who is on leave based on currentLeaveData (from Attendance sheet I:K)
         const currentLeaveNames = new Set(currentLeaveData.map(l => l.name.toLowerCase().trim()));
         
-        people.forEach(person => {
+        teamPeople.forEach(person => {
             const personNameLower = person.name.toLowerCase().trim();
             const todayStatus = todayAttendanceMap.get(personNameLower);
             const statusAbbr = getStatusAbbreviation(todayStatus);
@@ -1731,7 +1755,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         onLeave.sort((a, b) => a.name.localeCompare(b.name));
         
         return { onTrackEmployees: onTrack, negativeScoreEmployees: negativeScore, onLeaveEmployees: onLeave };
-    }, [misWeekdayTasks, people, currentLeaveData, dailyAttendanceData]);
+    }, [misWeekdayTasks, teamPeople, currentLeaveData, dailyAttendanceData]);
 
     const statusCounts = useMemo(() => {
         const counts: Record<string, number> = { 'P': 0, 'L': 0, 'NM': 0, 'OT': 0, 'HD': 0, 'A': 0 };
@@ -1757,7 +1781,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         if (!selectedMisEmployeeName) return null;
 
         const selectedNameLower = selectedMisEmployeeName.toLowerCase();
-        const personInfo = people.find(p => p.name.toLowerCase() === selectedNameLower);
+        const personInfo = teamPeople.find(p => p.name.toLowerCase() === selectedNameLower);
         const taskInfo = misWeekdayTasks.find(t => t.userName.toLowerCase() === selectedNameLower);
 
         const email = (personInfo?.email || taskInfo?.userEmail || '').toLowerCase();
@@ -1962,7 +1986,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             lateTasks: finalLateTasks,
             dateRange: dateRangeStr
         };
-    }, [selectedMisEmployeeName, misWeekdayTasks, people, dailyAttendanceData, selectedMisPeriod, holidays, PRESENT_STATUSES, hrEmployeeStatusFilter]);
+    }, [selectedMisEmployeeName, misWeekdayTasks, teamPeople, dailyAttendanceData, selectedMisPeriod, holidays, PRESENT_STATUSES, hrEmployeeStatusFilter]);
 
      // --- New Calculations for Admin's "Employee View" ---
     const misEmployeeViewData = useMemo(() => {
@@ -1970,7 +1994,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         // --- Details ---
         const selectedNameLower = selectedMisEmployeeName.toLowerCase();
-        const personInfo = people.find(p => p.name.toLowerCase() === selectedNameLower);
+        const personInfo = teamPeople.find(p => p.name.toLowerCase() === selectedNameLower);
         const taskInfo = misWeekdayTasks.find(t => t.userName.toLowerCase() === selectedNameLower);
         const email = (personInfo?.email || taskInfo?.userEmail || '').toLowerCase();
         const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl);
@@ -2122,7 +2146,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         })();
 
         return { employeeDetails, attendance: attendanceBreakdown, kpis: kpiData, monthlyNbdCounts: employeeMonthlyNbdCounts };
-    }, [selectedMisEmployeeName, misWeekdayTasks, dailyAttendanceData, holidays, people, hrEmployeeStatusFilter]);
+    }, [selectedMisEmployeeName, misWeekdayTasks, dailyAttendanceData, holidays, teamPeople, hrEmployeeStatusFilter]);
 
 
     const allEmployees = useMemo(() => {
@@ -2517,7 +2541,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     </div>
                     <div className="dashboard-tabs">
                         <button onClick={() => setDashboardMode('myDashboard')} className={dashboardMode === 'myDashboard' ? 'active' : ''}>My Dashboard</button>
-                        {isAdmin && <button onClick={() => setDashboardMode('employeeMIS')} className={dashboardMode === 'employeeMIS' ? 'active' : ''}>Employee MIS</button>}
+                        {canViewMIS && <button onClick={() => setDashboardMode('employeeMIS')} className={dashboardMode === 'employeeMIS' ? 'active' : ''}>Employee MIS</button>}
                         {(isAdmin || isHr) && <button onClick={() => setDashboardMode('hrLeaves')} className={dashboardMode === 'hrLeaves' ? 'active' : ''}>Leaves Dashboard</button>}
                         {/* New button for All Users Dashboard */}
                         {isAdmin && (
@@ -2812,7 +2836,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 </div>
             )}
 
-            {dashboardMode === 'employeeMIS' && isAdmin && (
+            {dashboardMode === 'employeeMIS' && canViewMIS && (
                 <div className="employee-mis-view">
                     <h3 className="mis-view-title">Team Highlights</h3>
                     {misTasksError && <div className="error-message" style={{marginBottom: '24px'}}>{misTasksError}</div>}
