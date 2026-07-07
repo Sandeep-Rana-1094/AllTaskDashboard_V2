@@ -378,7 +378,10 @@ const App = () => {
                     const parsedData = robustCsvParser(csvText);
                     const parsedPeople: Person[] = parsedData.map(fields => {
                         let name = (fields[0] || '').trim(); // Column B
-                        const email = (fields[4] || fields[1] || '').trim(); // Column F (Gmail Id) fallback to Column C (Email)
+                        const email1 = (fields[1] || '').trim(); // Column C (Email)
+                        const email2 = (fields[4] || '').trim(); // Column F (Gmail Id)
+                        const email = email2 || email1;
+                        const secondaryEmail = email1 && email2 && email1 !== email2 ? email1 : undefined;
                         const status = (fields[6] || '').trim(); // Column H
                         const emailLower = email.toLowerCase();
                         const photoUrl = photoUrlMap.get(emailLower) || (fields[15] || '').trim(); // Column Q fallback
@@ -386,7 +389,7 @@ const App = () => {
                             const namePart = email.split('@')[0];
                             name = namePart.replace(/[._-]/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
                         }
-                        return { name, email, photoUrl, status };
+                        return { name, email, secondaryEmail, photoUrl, status };
                     }).filter(p => {
                         // A person must have a name to be included in the system.
                         if (!p.name || p.name.trim() === '') {
