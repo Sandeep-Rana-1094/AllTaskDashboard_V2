@@ -308,13 +308,7 @@ const AttendanceAlert: React.FC<{
                     >
                         Mark Attendance Here
                     </a>
-                    <button 
-                        onClick={onClose} 
-                        className="btn btn-secondary"
-                        style={{ padding: '10px' }}
-                    >
-                        Remind Me Later
-                    </button>
+                    
                 </div>
             </div>
         </div>
