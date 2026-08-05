@@ -123,5 +123,15 @@ export interface AttendanceCheck {
     gmail: string;
 }
 
+export interface RajuTask {
+  id: string;
+  task: string;
+  doer: string;
+  frequency: string;
+  date: string;
+  buddy?: string;
+  secondBuddy?: string;
+}
+
 export type AppMode = 'checklist' | 'delegation' | 'dashboard';
 export type ChecklistSubMode = 'templates' | 'master';
