@@ -1,10 +1,38 @@
 
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday, AttendanceCheck } from './types';
-import { parseDate, calculateWorkingDaysDelay, calculateWorkingDaysPassed } from './utils';
+import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday, AttendanceCheck, RajuTask } from './types';
+import { parseDate, getIsoDate, calculateWorkingDaysDelay, calculateWorkingDaysPassed } from './utils';
 
 // --- HELPER FUNCTIONS ---
+
+const isDateForToday = (itemDateStr?: string, targetTaskDateStr?: string): boolean => {
+    if (!itemDateStr || !itemDateStr.trim()) return false;
+
+    const trimmed = itemDateStr.trim();
+    
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    const itemIso = getIsoDate(trimmed);
+    
+    if (itemIso && itemIso === todayIso) return true;
+
+    if (targetTaskDateStr) {
+        const taskIso = getIsoDate(targetTaskDateStr);
+        if (itemIso && taskIso && itemIso === taskIso) return true;
+    }
+
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    const formatDDMMYYYY = `${dd}/${mm}/${yyyy}`;
+    const formatMMDDYYYY = `${mm}/${dd}/${yyyy}`;
+    
+    if (trimmed === formatDDMMYYYY || trimmed === formatMMDDYYYY) return true;
+
+    return false;
+};
 
 const formatDateToDDMMYYYY = (date: Date): string => {
     const day = String(date.getDate()).padStart(2, '0');
@@ -210,6 +238,7 @@ interface TaskDashboardSystemProps {
     holidays: Holiday[];
     taskHistory: TaskHistory[];
     attendanceCheckData: AttendanceCheck[];
+    rajuTasks?: RajuTask[];
 }
 
 // --- SVG ICONS ---
@@ -396,17 +425,64 @@ const LiveUsersModal: React.FC<{
 const AttachmentModal: React.FC<{
     task: DashboardTask | null; onClose: () => void;
     onSubmit: (file: File | null, remark?: string) => void; isSubmitting: boolean;
-}> = ({ task, onClose, onSubmit, isSubmitting }) => {
+    rajuTasks?: RajuTask[];
+}> = ({ task, onClose, onSubmit, isSubmitting, rajuTasks = [] }) => {
+    const [proofType, setProofType] = useState<'report' | 'remark' | 'checklist'>('report');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [reportLink, setReportLink] = useState('');
     const [remark, setRemark] = useState('');
-    
+    const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+
     useEffect(() => { 
         setSelectedFile(null); 
+        setReportLink('');
         setRemark('');
+        setCheckedItems(new Set());
+        if (task) {
+            const lowerTask = (task.task || '').toLowerCase();
+            const lowerLink = (task.link || '').toLowerCase();
+            if (lowerTask.includes('checklist') || lowerTask.includes('raju') || lowerLink.includes('checklist')) {
+                setProofType('checklist');
+            } else if (lowerTask.includes('remark') || lowerTask.includes('comment')) {
+                setProofType('remark');
+            } else {
+                setProofType('report');
+            }
+        }
     }, [task]);
     
     if (!task) return null;
+
+    const doerNameLower = (task.userName || task.name || '').toLowerCase();
     
+    // Only include tasks scheduled for today's date (column D in rajuTasks)
+    const todayRajuTasks = rajuTasks.filter(item => item.task && isDateForToday(item.date, task.planned));
+    
+    const filteredByDoer = todayRajuTasks.filter(item => {
+        if (!doerNameLower) return true;
+        const itemDoerLower = (item.doer || '').toLowerCase();
+        return itemDoerLower.includes(doerNameLower) || doerNameLower.includes(itemDoerLower) || itemDoerLower === '';
+    });
+
+    const activeChecklistItems = filteredByDoer.length > 0 ? filteredByDoer : todayRajuTasks;
+
+    const handleToggleCheck = (itemId: string) => {
+        setCheckedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(itemId)) next.delete(itemId);
+            else next.add(itemId);
+            return next;
+        });
+    };
+
+    const handleToggleCheckAll = () => {
+        if (checkedItems.size === activeChecklistItems.length) {
+            setCheckedItems(new Set());
+        } else {
+            setCheckedItems(new Set(activeChecklistItems.map(i => i.id)));
+        }
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files ? e.target.files[0] : null;
         if (file) {
@@ -416,46 +492,207 @@ const AttachmentModal: React.FC<{
             } else { setSelectedFile(file); }
         }
     };
-    
-    const handleSubmit = () => { 
-        if (selectedFile || remark.trim() !== '') onSubmit(selectedFile, remark.trim()); 
-    };
 
-    const canSubmit = selectedFile || remark.trim() !== '';
+    let canSubmit = false;
+    if (proofType === 'report') {
+        canSubmit = selectedFile !== null || reportLink.trim() !== '';
+    } else if (proofType === 'remark') {
+        canSubmit = remark.trim() !== '';
+    } else if (proofType === 'checklist') {
+        canSubmit = activeChecklistItems.length > 0 && checkedItems.size === activeChecklistItems.length;
+    }
+
+    const handleSubmit = () => {
+        if (!canSubmit) return;
+        let finalRemark = remark;
+        if (proofType === 'report' && reportLink.trim()) {
+            finalRemark = remark ? `Report Link: ${reportLink.trim()} | ${remark}` : `Report Link: ${reportLink.trim()}`;
+        } else if (proofType === 'checklist') {
+            finalRemark = `Checklist completed (${checkedItems.size}/${activeChecklistItems.length} items checked)`;
+        }
+        onSubmit(selectedFile, finalRemark);
+    };
 
     return (
         <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="attachment-modal-title">
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <h2 id="attachment-modal-title">Submit Task with Attachment or Remark</h2>
-                <p><strong>Task:</strong> {task.task}</p>
-                <div className="modal-form">
-                    <div className="form-group">
-                        <label htmlFor="attachment-file" style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Upload Document (Optional)</label>
-                        <input id="attachment-file" type="file" onChange={handleFileChange} className="form-control" style={{ width: '100%', padding: '8px', cursor: 'pointer' }} />
-                        {selectedFile && <p style={{ marginTop: '8px', fontSize: '0.9em', color: '#6b7280' }}>Selected: {selectedFile.name}</p>}
-                    </div>
-                    
-                    <div className="form-group" style={{ marginTop: '16px' }}>
-                        <label htmlFor="attachment-remark" style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Add Remark (Optional)</label>
-                        <textarea 
-                            id="attachment-remark" 
-                            className="form-control"
-                            value={remark} 
-                            onChange={(e) => setRemark(e.target.value)} 
-                            rows={3} 
-                            placeholder="Enter your remarks here..."
-                            style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #d1d5db', resize: 'vertical' }}
-                        ></textarea>
-                    </div>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%' }}>
+                <div className="delegation-modal-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h2 id="attachment-modal-title" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Submit Task & Proof Requirement</h2>
+                    <button onClick={onClose} className="btn-close-modal" aria-label="Close modal">&times;</button>
+                </div>
 
-                    <div style={{ marginTop: '8px', fontSize: '0.85em', color: '#6b7280', fontStyle: 'italic' }}>
-                        Please upload a document OR add a remark to mark this task as done.
-                    </div>
+                <div style={{ background: '#f9fafb', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', border: '1px solid #e5e7eb' }}>
+                    <p style={{ margin: 0, fontSize: '0.88rem', color: '#374151' }}><strong>Task ID:</strong> {task.taskId} | <strong>Doer:</strong> {task.userName || task.name}</p>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.95rem', fontWeight: 600, color: '#111827' }}>{task.task}</p>
+                </div>
 
-                    <div className="modal-actions" style={{ marginTop: '20px' }}>
-                        <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>Cancel</button>
-                        <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>{isSubmitting ? 'Submitting...' : 'Done'}</button>
+                {/* PROOF REQUIREMENT TYPE SELECTOR */}
+                <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                        Proof Requirement:
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px', background: '#f3f4f6', padding: '4px', borderRadius: '8px' }}>
+                        <button
+                            type="button"
+                            onClick={() => setProofType('report')}
+                            style={{
+                                flex: 1, padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                background: proofType === 'report' ? '#2563eb' : 'transparent',
+                                color: proofType === 'report' ? '#fff' : '#4b5563',
+                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s'
+                            }}
+                        >
+                            Report Link
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setProofType('remark')}
+                            style={{
+                                flex: 1, padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                background: proofType === 'remark' ? '#2563eb' : 'transparent',
+                                color: proofType === 'remark' ? '#fff' : '#4b5563',
+                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s'
+                            }}
+                        >
+                            Remark
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setProofType('checklist')}
+                            style={{
+                                flex: 1, padding: '8px 12px', borderRadius: '6px', border: 'none',
+                                background: proofType === 'checklist' ? '#2563eb' : 'transparent',
+                                color: proofType === 'checklist' ? '#fff' : '#4b5563',
+                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s'
+                            }}
+                        >
+                            Checklist
+                        </button>
                     </div>
+                </div>
+
+                {/* PROOF TYPE 1: REPORT LINK / FILE */}
+                {proofType === 'report' && (
+                    <div className="modal-form" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <div className="form-group">
+                            <label htmlFor="report-link" style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.88rem' }}>Report Link (URL)</label>
+                            <input
+                                id="report-link"
+                                type="url"
+                                className="form-control"
+                                value={reportLink}
+                                onChange={e => setReportLink(e.target.value)}
+                                placeholder="Paste report link here..."
+                                style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.9rem' }}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label htmlFor="attachment-file" style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.88rem' }}>OR Upload Report File</label>
+                            <input id="attachment-file" type="file" onChange={handleFileChange} className="form-control" style={{ width: '100%', padding: '8px', cursor: 'pointer' }} />
+                            {selectedFile && <p style={{ marginTop: '4px', fontSize: '0.85em', color: '#2563eb', fontWeight: 500 }}>Selected: {selectedFile.name}</p>}
+                        </div>
+                    </div>
+                )}
+
+                {/* PROOF TYPE 2: REMARK */}
+                {proofType === 'remark' && (
+                    <div className="modal-form">
+                        <div className="form-group">
+                            <label htmlFor="attachment-remark-only" style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.88rem' }}>Enter Remarks (Required)</label>
+                            <textarea
+                                id="attachment-remark-only"
+                                className="form-control"
+                                value={remark}
+                                onChange={(e) => setRemark(e.target.value)}
+                                rows={4}
+                                placeholder="Enter detailed remarks here..."
+                                style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #d1d5db', resize: 'vertical' }}
+                                required
+                            ></textarea>
+                        </div>
+                    </div>
+                )}
+
+                {/* PROOF TYPE 3: CHECKLIST MONITORING */}
+                {proofType === 'checklist' && (
+                    <div className="modal-form">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#374151' }}>
+                                rajuTasks Checklist ({checkedItems.size} of {activeChecklistItems.length} checked)
+                            </span>
+                            {activeChecklistItems.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={handleToggleCheckAll}
+                                    style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    {checkedItems.size === activeChecklistItems.length ? 'Uncheck All' : 'Select All'}
+                                </button>
+                            )}
+                        </div>
+
+                        <div style={{ maxHeight: '260px', overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px', background: '#fff' }}>
+                            {activeChecklistItems.length > 0 ? (
+                                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                                    {activeChecklistItems.map((item, idx) => {
+                                        const isChecked = checkedItems.has(item.id);
+                                        return (
+                                            <li
+                                                key={item.id || idx}
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    borderBottom: idx < activeChecklistItems.length - 1 ? '1px solid #f3f4f6' : 'none',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    background: isChecked ? '#f0fdf4' : 'transparent',
+                                                    borderRadius: '6px',
+                                                    marginBottom: '4px',
+                                                    transition: 'background 0.2s'
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    id={`chk-${item.id || idx}`}
+                                                    checked={isChecked}
+                                                    onChange={() => handleToggleCheck(item.id)}
+                                                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#16a34a' }}
+                                                />
+                                                <label htmlFor={`chk-${item.id || idx}`} style={{ cursor: 'pointer', flex: 1, fontSize: '0.88rem', margin: 0 }}>
+                                                    <div style={{ fontWeight: 600, color: isChecked ? '#15803d' : '#111827', textDecoration: isChecked ? 'line-through' : 'none' }}>
+                                                        {item.task}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '2px', display: 'flex', gap: '12px' }}>
+                                                        {item.frequency && <span>Freq: <strong>{item.frequency}</strong></span>}
+                                                        {item.date && <span>Date: <strong>{item.date}</strong></span>}
+                                                        {item.doer && <span>Doer: <strong>{item.doer}</strong></span>}
+                                                    </div>
+                                                </label>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '20px', color: '#9ca3af', fontSize: '0.88rem' }}>
+                                    No checklist tasks scheduled for today in rajuTasks sheet.
+                                </div>
+                            )}
+                        </div>
+
+                        {!canSubmit && activeChecklistItems.length > 0 && (
+                            <p style={{ marginTop: '8px', fontSize: '0.82rem', color: '#dc2626', fontWeight: 500, margin: '8px 0 0 0' }}>
+                                ⚠️ Doer cannot mark task as done until ALL checklist items are marked.
+                            </p>
+                        )}
+                    </div>
+                )}
+
+                <div className="modal-actions" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>Cancel</button>
+                    <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit || isSubmitting}>
+                        {isSubmitting ? 'Submitting...' : 'Done'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -946,6 +1183,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     holidays,
     taskHistory,
     attendanceCheckData,
+    rajuTasks = [],
 }) => {
     const isSuperAdmin = authenticatedUser?.role === 'Super Admin';
     const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
@@ -3441,7 +3679,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             )}
             
             {/* SHARED MODALS - Available in all modes */}
-            <AttachmentModal task={attachmentModalTask} onClose={() => setAttachmentModalTask(null)} onSubmit={handleModalSubmit} isSubmitting={isSubmitting} />
+            <AttachmentModal task={attachmentModalTask} onClose={() => setAttachmentModalTask(null)} onSubmit={handleModalSubmit} isSubmitting={isSubmitting} rajuTasks={rajuTasks} />
             <SelectedDateModal
                 date={selectedCalendarDate}
                 tasks={selectedCalendarDate ? tasksByDate.get(`${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`) || [] : []}
