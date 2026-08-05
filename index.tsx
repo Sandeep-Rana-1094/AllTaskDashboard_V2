@@ -4,7 +4,7 @@ import { ChecklistSystem } from './ChecklistSystem.tsx';
 import { DelegationSystem } from './DelegationSystem.tsx';
 import { TaskDashboardSystem } from './TaskDashboardSystem.tsx';
 import { 
-    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole, AttendanceCheck, RajuTask
+    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole, AttendanceCheck, RajuTask, ProofRequirement
 } from './types';
 import { useLocalStorage, robustCsvParser } from './utils';
 
@@ -273,6 +273,7 @@ const App = () => {
     const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
     const [attendanceCheckData, setAttendanceCheckData] = useState<AttendanceCheck[]>([]);
     const [rajuTasks, setRajuTasks] = useState<RajuTask[]>([]);
+    const [proofRequirements, setProofRequirements] = useState<ProofRequirement[]>([]);
 
     // Loading and Error State
     const [isLoadingPeople, setIsLoadingPeople] = useState(true);
@@ -343,6 +344,7 @@ const App = () => {
         const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
         const attendanceCheckUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=M:S`;
         const rajuTasksUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('rajuTasks')}`;
+        const proofRequiredTasksUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Proof Required Tasks')}`;
 
         const fetchWithHandling = async (url: string, processor: (csv: string) => void) => {
             const response = await fetch(url);
@@ -699,6 +701,24 @@ const App = () => {
             } catch (err: any) {
                 console.error("Data fetch error (rajuTasks):", err);
             }
+            await sleep(250);
+
+            // 12. Fetch Proof Required Tasks
+            try {
+                await fetchWithHandling(proofRequiredTasksUrl, (csvText) => {
+                    const parsedData = robustCsvParser(csvText);
+                    const importedRequirements: ProofRequirement[] = parsedData
+                        .filter(fields => fields.length > 0 && fields[0] && fields[0].trim() !== '')
+                        .map(fields => ({
+                            task: (fields[0] || '').trim(),
+                            requirement: (fields[1] || '').trim(),
+                        }))
+                        .filter(r => r.task.toLowerCase() !== 'task' && r.task.toLowerCase() !== 'requirment');
+                    setProofRequirements(importedRequirements);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (Proof Required Tasks):", err);
+            }
 
         } catch (err) {
             console.error("An unexpected error occurred during data fetch:", err);
@@ -832,6 +852,7 @@ const App = () => {
                             taskHistory={taskHistory}
                             attendanceCheckData={attendanceCheckData}
                             rajuTasks={rajuTasks}
+                            proofRequirements={proofRequirements}
                         />
                     ) : (isAdmin && mode === 'delegation') ? (
                         <DelegationSystem 
@@ -882,6 +903,7 @@ const App = () => {
                             taskHistory={taskHistory}
                             attendanceCheckData={attendanceCheckData}
                             rajuTasks={rajuTasks}
+                            proofRequirements={proofRequirements}
                         />
                     )}
                 </main>
