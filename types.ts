@@ -133,5 +133,10 @@ export interface RajuTask {
   secondBuddy?: string;
 }
 
+export interface ProofRequirement {
+  task: string;
+  requirement: string;
+}
+
 export type AppMode = 'checklist' | 'delegation' | 'dashboard';
 export type ChecklistSubMode = 'templates' | 'master';
