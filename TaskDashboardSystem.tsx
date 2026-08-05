@@ -1,7 +1,7 @@
 
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday, AttendanceCheck, RajuTask } from './types';
+import { AuthenticatedUser, DashboardTask, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday, AttendanceCheck, RajuTask, ProofRequirement } from './types';
 import { parseDate, getIsoDate, calculateWorkingDaysDelay, calculateWorkingDaysPassed } from './utils';
 
 // --- HELPER FUNCTIONS ---
@@ -239,6 +239,7 @@ interface TaskDashboardSystemProps {
     taskHistory: TaskHistory[];
     attendanceCheckData: AttendanceCheck[];
     rajuTasks?: RajuTask[];
+    proofRequirements?: ProofRequirement[];
 }
 
 // --- SVG ICONS ---
@@ -426,7 +427,8 @@ const AttachmentModal: React.FC<{
     task: DashboardTask | null; onClose: () => void;
     onSubmit: (file: File | null, remark?: string) => void; isSubmitting: boolean;
     rajuTasks?: RajuTask[];
-}> = ({ task, onClose, onSubmit, isSubmitting, rajuTasks = [] }) => {
+    proofRequirements?: ProofRequirement[];
+}> = ({ task, onClose, onSubmit, isSubmitting, rajuTasks = [], proofRequirements = [] }) => {
     const [proofType, setProofType] = useState<'report' | 'remark' | 'checklist'>('report');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [reportLink, setReportLink] = useState('');
@@ -439,17 +441,37 @@ const AttachmentModal: React.FC<{
         setRemark('');
         setCheckedItems(new Set());
         if (task) {
-            const lowerTask = (task.task || '').toLowerCase();
-            const lowerLink = (task.link || '').toLowerCase();
-            if (lowerTask.includes('checklist') || lowerTask.includes('raju') || lowerLink.includes('checklist')) {
-                setProofType('checklist');
-            } else if (lowerTask.includes('remark') || lowerTask.includes('comment')) {
-                setProofType('remark');
+            const lowerTask = (task.task || '').toLowerCase().trim();
+            const lowerLink = (task.link || '').toLowerCase().trim();
+
+            const matchedReq = proofRequirements.find(pr => {
+                const prTaskLower = (pr.task || '').toLowerCase().trim();
+                if (!prTaskLower) return false;
+                return lowerTask === prTaskLower || lowerTask.includes(prTaskLower) || prTaskLower.includes(lowerTask);
+            });
+
+            if (matchedReq && matchedReq.requirement) {
+                const reqLower = matchedReq.requirement.toLowerCase().trim();
+                if (reqLower.includes('checklist')) {
+                    setProofType('checklist');
+                } else if (reqLower.includes('remark')) {
+                    setProofType('remark');
+                } else if (reqLower.includes('report')) {
+                    setProofType('report');
+                } else {
+                    setProofType('report');
+                }
             } else {
-                setProofType('report');
+                if (lowerTask.includes('checklist') || lowerTask.includes('raju') || lowerTask.includes('monitor') || lowerLink.includes('checklist')) {
+                    setProofType('checklist');
+                } else if (lowerTask.includes('remark') || lowerTask.includes('comment') || lowerTask.includes('coordinate')) {
+                    setProofType('remark');
+                } else {
+                    setProofType('report');
+                }
             }
         }
-    }, [task]);
+    }, [task, proofRequirements]);
     
     if (!task) return null;
 
@@ -517,7 +539,7 @@ const AttachmentModal: React.FC<{
         <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="attachment-modal-title">
             <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%' }}>
                 <div className="delegation-modal-header" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 id="attachment-modal-title" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Submit Task & Proof Requirement</h2>
+                    <h2 id="attachment-modal-title" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Submit Task Proof</h2>
                     <button onClick={onClose} className="btn-close-modal" aria-label="Close modal">&times;</button>
                 </div>
 
@@ -526,48 +548,22 @@ const AttachmentModal: React.FC<{
                     <p style={{ margin: '4px 0 0 0', fontSize: '0.95rem', fontWeight: 600, color: '#111827' }}>{task.task}</p>
                 </div>
 
-                {/* PROOF REQUIREMENT TYPE SELECTOR */}
+                {/* READ-ONLY PROOF REQUIREMENT BADGE */}
                 <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
-                        Proof Requirement:
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px', background: '#f3f4f6', padding: '4px', borderRadius: '8px' }}>
-                        <button
-                            type="button"
-                            onClick={() => setProofType('report')}
-                            style={{
-                                flex: 1, padding: '8px 12px', borderRadius: '6px', border: 'none',
-                                background: proofType === 'report' ? '#2563eb' : 'transparent',
-                                color: proofType === 'report' ? '#fff' : '#4b5563',
-                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s'
-                            }}
-                        >
-                            Report Link
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setProofType('remark')}
-                            style={{
-                                flex: 1, padding: '8px 12px', borderRadius: '6px', border: 'none',
-                                background: proofType === 'remark' ? '#2563eb' : 'transparent',
-                                color: proofType === 'remark' ? '#fff' : '#4b5563',
-                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s'
-                            }}
-                        >
-                            Remark
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setProofType('checklist')}
-                            style={{
-                                flex: 1, padding: '8px 12px', borderRadius: '6px', border: 'none',
-                                background: proofType === 'checklist' ? '#2563eb' : 'transparent',
-                                color: proofType === 'checklist' ? '#fff' : '#4b5563',
-                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s'
-                            }}
-                        >
-                            Checklist
-                        </button>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0'
+                    }}>
+                        <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#475569' }}>
+                            Requirement:
+                        </span>
+                        <span style={{
+                            fontSize: '0.85rem', fontWeight: 700, padding: '4px 12px', borderRadius: '6px',
+                            background: proofType === 'checklist' ? '#dcfce7' : proofType === 'remark' ? '#fef3c7' : '#dbeafe',
+                            color: proofType === 'checklist' ? '#15803d' : proofType === 'remark' ? '#b45309' : '#1d4ed8'
+                        }}>
+                            {proofType === 'checklist' ? '📋 Checklist Completion' : proofType === 'remark' ? '✍️ Remarks Required' : '📄 Report Link / File'}
+                        </span>
                     </div>
                 </div>
 
@@ -1184,6 +1180,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     taskHistory,
     attendanceCheckData,
     rajuTasks = [],
+    proofRequirements = [],
 }) => {
     const isSuperAdmin = authenticatedUser?.role === 'Super Admin';
     const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
@@ -3679,7 +3676,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             )}
             
             {/* SHARED MODALS - Available in all modes */}
-            <AttachmentModal task={attachmentModalTask} onClose={() => setAttachmentModalTask(null)} onSubmit={handleModalSubmit} isSubmitting={isSubmitting} rajuTasks={rajuTasks} />
+            <AttachmentModal task={attachmentModalTask} onClose={() => setAttachmentModalTask(null)} onSubmit={handleModalSubmit} isSubmitting={isSubmitting} rajuTasks={rajuTasks} proofRequirements={proofRequirements} />
             <SelectedDateModal
                 date={selectedCalendarDate}
                 tasks={selectedCalendarDate ? tasksByDate.get(`${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`) || [] : []}
