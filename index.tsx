@@ -4,7 +4,7 @@ import { ChecklistSystem } from './ChecklistSystem.tsx';
 import { DelegationSystem } from './DelegationSystem.tsx';
 import { TaskDashboardSystem } from './TaskDashboardSystem.tsx';
 import { 
-    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole, AttendanceCheck
+    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole, AttendanceCheck, RajuTask
 } from './types';
 import { useLocalStorage, robustCsvParser } from './utils';
 
@@ -272,6 +272,7 @@ const App = () => {
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [taskHistory, setTaskHistory] = useState<TaskHistory[]>([]);
     const [attendanceCheckData, setAttendanceCheckData] = useState<AttendanceCheck[]>([]);
+    const [rajuTasks, setRajuTasks] = useState<RajuTask[]>([]);
 
     // Loading and Error State
     const [isLoadingPeople, setIsLoadingPeople] = useState(true);
@@ -341,6 +342,7 @@ const App = () => {
         const holidaysUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&range=S:T`;
         const historyUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=History`;
         const attendanceCheckUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Attendance&range=M:S`;
+        const rajuTasksUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('rajuTasks')}`;
 
         const fetchWithHandling = async (url: string, processor: (csv: string) => void) => {
             const response = await fetch(url);
@@ -674,6 +676,29 @@ const App = () => {
                 console.error("Data fetch error (Attendance Check):", err);
                 setAttendanceCheckError('Failed to load Attendance Check data from Attendance sheet.');
             }
+            await sleep(250);
+
+            // 11. Fetch Raju Tasks Checklist
+            try {
+                await fetchWithHandling(rajuTasksUrl, (csvText) => {
+                    const parsedData = robustCsvParser(csvText);
+                    const importedRajuTasks: RajuTask[] = parsedData
+                        .filter(fields => fields.length > 0 && fields.some(f => f && f.trim() !== ''))
+                        .map((fields, index) => ({
+                            id: `raju-task-${index}`,
+                            task: (fields[0] || '').trim(),
+                            doer: (fields[1] || '').trim(),
+                            frequency: (fields[2] || '').trim(),
+                            date: (fields[3] || '').trim(),
+                            buddy: (fields[4] || '').trim(),
+                            secondBuddy: (fields[5] || '').trim(),
+                        }))
+                        .filter(t => t.task && t.task.toLowerCase() !== 'task');
+                    setRajuTasks(importedRajuTasks);
+                });
+            } catch (err: any) {
+                console.error("Data fetch error (rajuTasks):", err);
+            }
 
         } catch (err) {
             console.error("An unexpected error occurred during data fetch:", err);
@@ -806,6 +831,7 @@ const App = () => {
                             holidays={holidays}
                             taskHistory={taskHistory}
                             attendanceCheckData={attendanceCheckData}
+                            rajuTasks={rajuTasks}
                         />
                     ) : (isAdmin && mode === 'delegation') ? (
                         <DelegationSystem 
@@ -855,6 +881,7 @@ const App = () => {
                             holidays={holidays}
                             taskHistory={taskHistory}
                             attendanceCheckData={attendanceCheckData}
+                            rajuTasks={rajuTasks}
                         />
                     )}
                 </main>
