@@ -47,11 +47,11 @@ const formatDateLong = (date: Date): string => {
 
 const STATUS_LABELS: Record<string, string> = {
     'P': 'Present',
+    'WFH': 'Work From Home',
     'L': 'Leave',
     'NM': 'Not Marked',
     'OT': 'Official Travel',
-    'HD': 'Half Day',
-    'A': 'Absent'
+    'HD': 'Half Day'
 };
 
 const getEmbeddableGoogleDriveUrl = (url?: string): string | undefined => {
@@ -1202,6 +1202,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const [liveUsers, setLiveUsers] = useState<{ email: string; role: string; isLive: boolean; lastSeen?: string }[]>([]);
     const [showLiveUsersModal, setShowLiveUsersModal] = useState(false);
     const [selectedStatusFilter, setSelectedStatusFilter] = useState<string | null>('All');
+    const [dailySummaryStatusFilter, setDailySummaryStatusFilter] = useState<string>('All');
     const wsRef = useRef<WebSocket | null>(null);
 
     // Derived state to ensure current user is always included in the logins list
@@ -1446,7 +1447,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const reportRef = useRef<HTMLDivElement>(null);
 
     // Statuses that count as being present for work
-    const PRESENT_STATUSES = ['present', 'on official travel', 'work from home'];
+    const PRESENT_STATUSES = ['present', 'on official travel', 'work from home', 'wfh'];
 
     useEffect(() => {
         if (selectedMisEmployeeName) {
@@ -1898,6 +1899,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     const getStatusAbbreviation = (status: string | undefined): string => {
         if (!status) return 'NM';
         const s = status.toLowerCase().trim();
+        if (s.includes('work from home') || s.includes('wfh')) return 'WFH';
         if (s.includes('present')) return 'P';
         if (s.includes('leave')) return 'L';
         if (s.includes('official travel')) return 'OT';
@@ -1999,7 +2001,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [misWeekdayTasks, teamPeople, currentLeaveData, dailyAttendanceData]);
 
     const statusCounts = useMemo(() => {
-        const counts: Record<string, number> = { 'P': 0, 'L': 0, 'NM': 0, 'OT': 0, 'HD': 0, 'A': 0 };
+        const counts: Record<string, number> = { 'P': 0, 'WFH': 0, 'L': 0, 'NM': 0, 'OT': 0, 'HD': 0 };
         const uniqueEmployees = new Map<string, string>();
         
         onTrackEmployees.forEach(p => uniqueEmployees.set(p.name, p.todayStatus || 'NM'));
@@ -2446,6 +2448,19 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
 
         return summary;
     }, [dashboardMode, hrSubView, selectedHrDate, people, dailyAttendanceData, hrEmployeeStatusFilter, leftEmployeesData]);
+
+    const filteredDailySummary = useMemo(() => {
+        if (!dailySummaryData) return [];
+        if (dailySummaryStatusFilter === 'All') return dailySummaryData;
+        const filterLower = dailySummaryStatusFilter.toLowerCase();
+        return dailySummaryData.filter(item => {
+            const itemStatusLower = (item.status || '').toLowerCase();
+            if (filterLower === 'work from home' || filterLower === 'wfh') {
+                return itemStatusLower.includes('work from home') || itemStatusLower.includes('wfh');
+            }
+            return itemStatusLower.includes(filterLower);
+        });
+    }, [dailySummaryData, dailySummaryStatusFilter]);
 
     const { filteredPendingTasks, tableTitle } = useMemo(() => {
         let tasksToFilter: DashboardTask[];
@@ -3037,15 +3052,34 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                             <div className="dashboard-card" style={{ padding: '24px', marginBottom: '24px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                                     <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700' }}>Daily Attendance Summary</h4>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <label htmlFor="hr-date-picker" style={{ fontWeight: '600', fontSize: '0.9rem', color: '#4b5563' }}>Select Date:</label>
-                                        <input 
-                                            id="hr-date-picker"
-                                            type="date" 
-                                            value={selectedHrDate} 
-                                            onChange={e => setSelectedHrDate(e.target.value)}
-                                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
-                                        />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label htmlFor="hr-date-picker" style={{ fontWeight: '600', fontSize: '0.9rem', color: '#4b5563' }}>Select Date:</label>
+                                            <input 
+                                                id="hr-date-picker"
+                                                type="date" 
+                                                value={selectedHrDate} 
+                                                onChange={e => setSelectedHrDate(e.target.value)}
+                                                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label htmlFor="hr-status-filter" style={{ fontWeight: '600', fontSize: '0.9rem', color: '#4b5563' }}>Filter Status:</label>
+                                            <select
+                                                id="hr-status-filter"
+                                                value={dailySummaryStatusFilter}
+                                                onChange={e => setDailySummaryStatusFilter(e.target.value)}
+                                                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem', background: '#fff' }}
+                                            >
+                                                <option value="All">All Statuses</option>
+                                                <option value="Present">Present</option>
+                                                <option value="Work From Home">Work From Home</option>
+                                                <option value="Leave">Leave</option>
+                                                <option value="On Official Travel">Official Travel</option>
+                                                <option value="Half Day">Half Day</option>
+                                                <option value="Not Marked">Not Marked</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -3061,28 +3095,40 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {dailySummaryData?.map((item, idx) => (
-                                                <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                    <td style={{ padding: '16px', fontWeight: '500' }}>{item.name}</td>
-                                                    <td style={{ padding: '16px', color: '#6b7280', fontSize: '0.9rem' }}>{item.email}</td>
-                                                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                                                        <span style={{ 
-                                                            padding: '4px 12px', 
-                                                            borderRadius: '12px', 
-                                                            fontSize: '0.8rem', 
-                                                            fontWeight: '700',
-                                                            textTransform: 'uppercase',
-                                                            background: item.status === 'Present' ? '#dcfce7' : item.status === 'Leave' ? '#fee2e2' : item.status === 'On Official Travel' ? '#e0f2fe' : '#f3f4f6',
-                                                            color: item.status === 'Present' ? '#166534' : item.status === 'Leave' ? '#991b1b' : item.status === 'On Official Travel' ? '#0369a1' : '#4b5563'
-                                                        }}>
-                                                            {item.status}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {(!dailySummaryData || dailySummaryData.length === 0) && (
+                                            {filteredDailySummary?.map((item, idx) => {
+                                                const lowerStatus = (item.status || '').toLowerCase();
+                                                const isPresent = lowerStatus === 'present';
+                                                const isWfh = lowerStatus.includes('work from home') || lowerStatus.includes('wfh');
+                                                const isLeave = lowerStatus.includes('leave');
+                                                const isTravel = lowerStatus.includes('travel') || lowerStatus.includes('official travel');
+                                                const isHalfDay = lowerStatus.includes('half day');
+
+                                                const badgeBg = isPresent ? '#dcfce7' : isWfh ? '#e0e7ff' : isLeave ? '#fee2e2' : isTravel ? '#e0f2fe' : isHalfDay ? '#fef3c7' : '#f3f4f6';
+                                                const badgeFg = isPresent ? '#166534' : isWfh ? '#3730a3' : isLeave ? '#991b1b' : isTravel ? '#0369a1' : isHalfDay ? '#92400e' : '#4b5563';
+
+                                                return (
+                                                    <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                                        <td style={{ padding: '16px', fontWeight: '500' }}>{item.name}</td>
+                                                        <td style={{ padding: '16px', color: '#6b7280', fontSize: '0.9rem' }}>{item.email}</td>
+                                                        <td style={{ padding: '16px', textAlign: 'center' }}>
+                                                            <span style={{ 
+                                                                padding: '4px 12px', 
+                                                                borderRadius: '12px', 
+                                                                fontSize: '0.8rem', 
+                                                                fontWeight: '700',
+                                                                textTransform: 'uppercase',
+                                                                background: badgeBg,
+                                                                color: badgeFg
+                                                            }}>
+                                                                {item.status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {(!filteredDailySummary || filteredDailySummary.length === 0) && (
                                                 <tr>
-                                                    <td colSpan={3} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af' }}>No employee data available.</td>
+                                                    <td colSpan={3} style={{ padding: '40px', textAlign: 'center', color: '#9ca3af' }}>No employee data available for the selected filters.</td>
                                                 </tr>
                                             )}
                                         </tbody>
@@ -3107,7 +3153,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                         >
                             All status ({totalEmployeeCount})
                         </button>
-                        {['P', 'L', 'NM', 'OT', 'HD'].map(status => (
+                        {['P', 'WFH', 'L', 'NM', 'OT', 'HD'].map(status => (
                             <button 
                                 key={status}
                                 className={`status-filter-btn ${selectedStatusFilter === status ? 'active' : ''}`}
