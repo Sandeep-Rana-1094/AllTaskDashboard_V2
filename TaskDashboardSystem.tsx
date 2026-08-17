@@ -1504,11 +1504,11 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
     }, [people, isAdmin, isHr, isManager, authenticatedUser]);
 
     useEffect(() => {
-        if (!canViewMIS && !isHr) {
+        if (!canViewMIS && !isHr && dashboardMode === 'employeeMIS') {
             setDashboardMode('myDashboard');
         }
-    }, [canViewMIS, isHr]);
-    
+    }, [canViewMIS, isHr, dashboardMode]);
+
     useEffect(() => {
         // When the task list is updated from the parent, clean up the in-flight set.
         setInFlightTaskIds(currentInFlightIds => {
@@ -1570,6 +1570,18 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
             photoUrl: getEmbeddableGoogleDriveUrl(rawPhotoUrl),
         };
     }, [people, userEmail, dashboardTasks]);
+
+    useEffect(() => {
+        if (dashboardMode === 'hrLeaves') {
+            if (!isAdmin && !isHr) {
+                if (selectedMisEmployeeName !== userName) {
+                    setSelectedMisEmployeeName(userName);
+                }
+            } else if (!selectedMisEmployeeName && userName) {
+                setSelectedMisEmployeeName(userName);
+            }
+        }
+    }, [dashboardMode, isAdmin, isHr, userName, selectedMisEmployeeName]);
 
     // --- My Dashboard Calculations ---
     const myAttendanceBreakdown = useMemo(() => {
@@ -2010,10 +2022,10 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
         if (!selectedMisEmployeeName) return null;
 
         const selectedNameLower = selectedMisEmployeeName.toLowerCase();
-        const personInfo = teamPeople.find(p => p.name.toLowerCase() === selectedNameLower);
-        const taskInfo = misWeekdayTasks.find(t => t.userName.toLowerCase() === selectedNameLower);
+        const personInfo = people.find(p => p.name.toLowerCase() === selectedNameLower);
+        const taskInfo = misWeekdayTasks.find(t => t.userName?.toLowerCase() === selectedNameLower);
 
-        const email = (personInfo?.email || taskInfo?.userEmail || '').toLowerCase();
+        const email = (personInfo?.email || personInfo?.secondaryEmail || taskInfo?.userEmail || (selectedNameLower === userName.toLowerCase() ? userEmail : '')).toLowerCase();
         const photoUrl = getEmbeddableGoogleDriveUrl(personInfo?.photoUrl);
         
         const { start: periodStart, end: periodEnd } = getPeriodDateRange(selectedMisPeriod);
@@ -2771,7 +2783,7 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                     <div className="dashboard-tabs">
                         <button onClick={() => setDashboardMode('myDashboard')} className={dashboardMode === 'myDashboard' ? 'active' : ''}>My Dashboard</button>
                         {canViewMIS && <button onClick={() => setDashboardMode('employeeMIS')} className={dashboardMode === 'employeeMIS' ? 'active' : ''}>Employee MIS</button>}
-                        {(isAdmin || isHr) && <button onClick={() => setDashboardMode('hrLeaves')} className={dashboardMode === 'hrLeaves' ? 'active' : ''}>Leaves Dashboard</button>}
+                        <button onClick={() => setDashboardMode('hrLeaves')} className={dashboardMode === 'hrLeaves' ? 'active' : ''}>Leaves Dashboard</button>
                         {/* New button for All Users Dashboard */}
                         {isAdmin && (
                             <button 
@@ -2795,27 +2807,34 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                 </div>
             </header>
 
-            {dashboardMode === 'hrLeaves' && (isAdmin || isHr) && (
+            {dashboardMode === 'hrLeaves' && (
                 <div className="hr-leaves-view" style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                        <h3 className="mis-view-title" style={{ margin: 0 }}>Leaves Dashboard</h3>
-                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                            <select 
-                                value={hrEmployeeStatusFilter} 
-                                onChange={(e) => {
-                                    setHrEmployeeStatusFilter(e.target.value as 'active' | 'left');
-                                    setSelectedMisEmployeeName(''); // Reset selected employee when filter changes
-                                }}
-                                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.9rem', backgroundColor: '#fff' }}
-                            >
-                                <option value="active">Active Employees</option>
-                                <option value="left">Left Employees</option>
-                            </select>
-                            <div className="dashboard-tabs" style={{ margin: 0 }}>
-                                <button onClick={() => setHrSubView('employee')} className={hrSubView === 'employee' ? 'active' : ''}>Employee View</button>
-                                <button onClick={() => setHrSubView('dailySummary')} className={hrSubView === 'dailySummary' ? 'active' : ''}>Daily Summary</button>
-                            </div>
+                        <div>
+                            <h3 className="mis-view-title" style={{ margin: 0 }}>Leaves Dashboard</h3>
+                            {!isAdmin && !isHr && (
+                                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#6b7280' }}>Individual Leave & Attendance Records</p>
+                            )}
                         </div>
+                        {(isAdmin || isHr) && (
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                <select 
+                                    value={hrEmployeeStatusFilter} 
+                                    onChange={(e) => {
+                                        setHrEmployeeStatusFilter(e.target.value as 'active' | 'left');
+                                        setSelectedMisEmployeeName(''); // Reset selected employee when filter changes
+                                    }}
+                                    style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '0.9rem', backgroundColor: '#fff' }}
+                                >
+                                    <option value="active">Active Employees</option>
+                                    <option value="left">Left Employees</option>
+                                </select>
+                                <div className="dashboard-tabs" style={{ margin: 0 }}>
+                                    <button onClick={() => setHrSubView('employee')} className={hrSubView === 'employee' ? 'active' : ''}>Employee View</button>
+                                    <button onClick={() => setHrSubView('dailySummary')} className={hrSubView === 'dailySummary' ? 'active' : ''}>Daily Summary</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {hrSubView === 'employee' ? (
@@ -2930,18 +2949,28 @@ export const TaskDashboardSystem: React.FC<TaskDashboardSystemProps> = ({
                                 <div className="dashboard-card mis-filters" style={{ padding: '24px', marginBottom: '24px' }}>
                                     <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '16px', color: '#374151' }}>Filter Controls</h4>
                                     <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                                        <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
-                                            <label htmlFor="hr-select-employee" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Employee</label>
-                                            <select 
-                                                id="hr-select-employee" 
-                                                value={selectedMisEmployeeName} 
-                                                onChange={e => setSelectedMisEmployeeName(e.target.value)}
-                                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
-                                            >
-                                                <option value="">-- Select Employee --</option>
-                                                {hrAllEmployees.map(name => <option key={name} value={name}>{name}</option>)}
-                                            </select>
-                                        </div>
+                                        {(isAdmin || isHr) ? (
+                                            <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
+                                                <label htmlFor="hr-select-employee" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Employee</label>
+                                                <select 
+                                                    id="hr-select-employee" 
+                                                    value={selectedMisEmployeeName || ''} 
+                                                    onChange={e => setSelectedMisEmployeeName(e.target.value)}
+                                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem' }}
+                                                >
+                                                    <option value="">-- Select Employee --</option>
+                                                    {hrAllEmployees.map(name => <option key={name} value={name}>{name}</option>)}
+                                                </select>
+                                            </div>
+                                        ) : (
+                                            <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
+                                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Employee</label>
+                                                <div style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '0.95rem', backgroundColor: '#f9fafb', fontWeight: '600', color: '#374151', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span>👤 {userName}</span>
+                                                    <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#e0e7ff', color: '#3730a3', fontWeight: '500', marginLeft: 'auto' }}>Individual Access</span>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="filter-group" style={{ flex: '1', minWidth: '200px' }}>
                                             <label htmlFor="hr-select-period" style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '0.85rem', color: '#6b7280' }}>Select Period</label>
                                             <select 
