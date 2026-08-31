@@ -103,7 +103,7 @@ const LoginPanel: React.FC<{ onLoginSuccess: (user: AuthenticatedUser) => void }
         e.preventDefault();
         setError('');
 
-        const sheetId = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
+        const sheetId = '1y2EAYROeCVqN1Eyeey_pNBjXUR_4VFwppULqh227Vi4';
         const usersSheetName = 'Users';
         
         const usersUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${usersSheetName}&range=A:C`;
@@ -296,7 +296,7 @@ const App = () => {
     // --- ACTION REQUIRED (STEP 2 from instructions at top of file) ---
     // PASTE YOUR NEW DEPLOYMENT URL HERE.
     // The URL you get after deploying the script from the MASTER workbook's script editor.
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwYN0BY-mpKiAmmj8zXF97dhukWH-m-q2fX6DTdfGVB6nHJIwBwhZ29ySaz1rNBr_Qv/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYOF5b0j7CDgf37q3y9uG3eAtebfjMUBKXFdVAMx3HirxVJKwu8cjc1kCHBP9uVXBgQ/exec";
     
     const DELEGATION_FORM_URL = "https://script.google.com/a/macros/bonhoeffermachines.in/s/AKfycbzbWlP5meyFunMy5L-55HgBOCIE1gtfYpKjrxlMeH-txezHerbEyTvlVEV19lqg78Nm/exec";
 
@@ -326,7 +326,7 @@ const App = () => {
         setTaskHistoryError(null);
 
 
-        const sheetId = '1XTc_cmSnyfAOduFTqpjnbAI8-dMgNz2LCBv_8DFTeNs';
+        const sheetId = '1y2EAYROeCVqN1Eyeey_pNBjXUR_4VFwppULqh227Vi4';
         const delegationSheetId = '18QL7gwHfWQyCCckTbwZr2eFgVnF55O8Vq9II_yQVzdU';
         const masterDashboardSheetId = '1tlHs1iKCEnhrNAZRMy8YiTMeLGtyd5QWJ09okevio_M';
 
