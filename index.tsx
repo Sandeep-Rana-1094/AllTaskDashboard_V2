@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ChecklistSystem } from './ChecklistSystem.tsx';
-import { DelegationSystem } from './DelegationSystem.tsx';
 import { TaskDashboardSystem } from './TaskDashboardSystem.tsx';
 import { 
-    Task, Checklist, MasterTask, DelegationTask, DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, AppMode, TaskHistory, Holiday, UserRole, AttendanceCheck, RajuTask, ProofRequirement
+    DashboardTask, AuthenticatedUser, UserAuth, Person, AttendanceData, DailyAttendance, TaskHistory, Holiday, UserRole, AttendanceCheck, RajuTask, ProofRequirement
 } from './types';
 import { useLocalStorage, robustCsvParser } from './utils';
 
@@ -256,14 +254,8 @@ const App = () => {
     const isAdmin = authenticatedUser?.role === 'Admin' || isSuperAdmin;
     const isManager = authenticatedUser?.role === 'Manager';
 
-    const [mode, setMode] = useState<AppMode>('dashboard');
-    
     // Data State
     const [people, setPeople] = useState<Person[]>([]);
-    const [tasks, setTasks] = useLocalStorage<Task[]>('task-delegator-tasks', []);
-    const [checklists, setChecklists] = useState<Checklist[]>([]);
-    const [masterTasks, setMasterTasks] = useState<MasterTask[]>([]);
-    const [delegationTasks, setDelegationTasks] = useState<DelegationTask[]>([]);
     const [allDashboardTasks, setAllDashboardTasks] = useState<DashboardTask[]>([]);
     const [attendanceData, setAttendanceData] = useState<AttendanceData[]>([]);
     const [dailyAttendanceData, setDailyAttendanceData] = useState<DailyAttendance[]>([]);
@@ -278,9 +270,6 @@ const App = () => {
     // Loading and Error State
     const [isLoadingPeople, setIsLoadingPeople] = useState(true);
     const [peopleError, setPeopleError] = useState<string | null>(null);
-    const [checklistsError, setChecklistsError] = useState<string | null>(null);
-    const [masterTasksError, setMasterTasksError] = useState<string | null>(null);
-    const [delegationTasksError, setDelegationTasksError] = useState<string | null>(null);
     const [allDashboardTasksError, setAllDashboardTasksError] = useState<string | null>(null);
     const [attendanceError, setAttendanceError] = useState<string | null>(null);
     const [dailyAttendanceError, setDailyAttendanceError] = useState<string | null>(null);
@@ -297,15 +286,6 @@ const App = () => {
     // PASTE YOUR NEW DEPLOYMENT URL HERE.
     // The URL you get after deploying the script from the MASTER workbook's script editor.
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYOF5b0j7CDgf37q3y9uG3eAtebfjMUBKXFdVAMx3HirxVJKwu8cjc1kCHBP9uVXBgQ/exec";
-    
-    const DELEGATION_FORM_URL = "https://script.google.com/a/macros/bonhoeffermachines.in/s/AKfycbzbWlP5meyFunMy5L-55HgBOCIE1gtfYpKjrxlMeH-txezHerbEyTvlVEV19lqg78Nm/exec";
-
-    // Enforce view for non-admin roles
-    useEffect(() => {
-        if (authenticatedUser && authenticatedUser.role !== 'Admin' && authenticatedUser.role !== 'Super Admin') {
-            setMode('dashboard');
-        }
-    }, [authenticatedUser]);
 
     const fetchData = useCallback(async (isInitialLoad = false) => {
         if (!isInitialLoad && isRefreshing) return;
@@ -315,16 +295,12 @@ const App = () => {
             setIsLoadingPeople(true);
         }
         setPeopleError(null);
-        setChecklistsError(null);
-        setMasterTasksError(null);
-        setDelegationTasksError(null);
         setAllDashboardTasksError(null);
         setAttendanceError(null);
         setDailyAttendanceError(null);
         setCurrentLeaveError(null);
         setHolidaysError(null);
         setTaskHistoryError(null);
-
 
         const sheetId = '1y2EAYROeCVqN1Eyeey_pNBjXUR_4VFwppULqh227Vi4';
         const delegationSheetId = '18QL7gwHfWQyCCckTbwZr2eFgVnF55O8Vq9II_yQVzdU';
@@ -333,9 +309,6 @@ const App = () => {
         // URLs for fetching data
         const peopleUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Employee%20Data&range=B:Q`;
         const nameFormatUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Name formate')}&range=E:I`;
-        const checklistUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Task&range=A:J`;
-        const masterUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Master Data')}&range=A:N`;
-        const delegationUrl = `https://docs.google.com/spreadsheets/d/${delegationSheetId}/gviz/tq?tqx=out:csv&sheet=Working%20Task%20Form`;
         const leavesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&range=J:K`;
         const dailyAttendanceUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT N, P, Q, R, U WHERE P IS NOT NULL AND Q IS NOT NULL')}`;
         const leftEmployeesUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Leaves&tq=${encodeURIComponent('SELECT X WHERE X IS NOT NULL')}`;
@@ -420,69 +393,7 @@ const App = () => {
             }
             await sleep(250);
 
-            // 2. Fetch Checklists
-            try {
-                await fetchWithHandling(checklistUrl, (csvText) => {
-                     const parsedData = robustCsvParser(csvText);
-                     const importedChecklists: Checklist[] = parsedData.filter(fields => fields.length > 0 && fields[0] && fields[0].trim() !== '').map((fields, index) => ({
-                         id: `sheet-item-${simpleHash((fields[0] || '') + '-' + (fields[1] || '') + '-' + index)}`,
-                         task: fields[0] || '',
-                         doer: fields[1] || '',
-                         frequency: fields[2] || 'D',
-                         date: fields[3] || '',
-                         buddy: fields[4] || '',
-                         secondBuddy: fields[5] || '',
-                     }));
-                     setChecklists(importedChecklists);
-                });
-            } catch (err: any) {
-               console.error("Data fetch error (Checklists):", err);
-               setChecklistsError('Failed to load Task List. Please ensure the "Task" sheet in the main Google Sheet is public and published to the web.');
-            }
-            await sleep(250);
-            
-            // 3. Fetch Master Tasks
-            try {
-                await fetchWithHandling(masterUrl, (csvText) => {
-                    const parsedData = robustCsvParser(csvText);
-                    const importedMasterTasks: MasterTask[] = parsedData
-                        .filter(fields => fields.length > 2 && fields[2] && fields[2].trim() !== '')
-                        .map((fields, index) => ({
-                            id: `master-task-${fields[0] || `row-${index}`}`, taskId: fields[0] || '', plannedDate: fields[1] || '',
-                            actualDate: fields[7] || '', taskDescription: fields[2] || '', doer: fields[3] || '',
-                            originalDoer: fields[11] || '', frequency: fields[4] || '', pc: fields[9] || '', status: fields[13] || '',
-                        }));
-                    setMasterTasks(importedMasterTasks);
-                });
-            } catch (err: any) {
-                console.error("Data fetch error (Master Tasks):", err);
-                setMasterTasksError('Failed to load Master Tasks. Please ensure the "Master Data" sheet in the main Google Sheet is public and published to the web.');
-            }
-            await sleep(250);
-
-            // 4. Fetch Delegation Tasks
-            try {
-                await fetchWithHandling(delegationUrl, (csvText) => {
-                     const parsedData = robustCsvParser(csvText);
-                     const allDelegationTasks: (DelegationTask & { status?: string })[] = parsedData.map((fields, index) => ({
-                        id: `delegation-${fields[7] || `row-${index}`}`, timestamp: fields[0] || '', assignee: fields[1] || '',
-                        task: fields[2] || '', plannedDate: fields[3] || '', assignerEmail: fields[4] || '', assigner: fields[5] || '',
-                        delegateEmail: fields[6] || '', taskId: fields[7] || '', actualDate: fields[8] || '', status: fields[9] || '',
-                     }));
-                     const importedDelegationTasks = allDelegationTasks.filter(task => {
-                        const hasTask = task.task && task.task.trim() !== '';
-                        const isCancelled = task.status && task.status.toLowerCase() === 'cancel';
-                        return hasTask && !isCancelled;
-                     });
-                     setDelegationTasks(importedDelegationTasks);
-                });
-            } catch (err: any) {
-                console.error("Data fetch error (Delegation Tasks):", err);
-                setDelegationTasksError('Failed to load Delegation Tasks. Please make sure the "Working Task Form" Google Sheet is public (set Share > General access > Anyone with the link) AND published to the web (File > Share > Publish to web).');
-            }
-            await sleep(250);
-            
-            // 5. Fetch All Dashboard Data
+            // 2. Fetch All Dashboard Data (Consolidated Checklist, Delegation, Master)
             try {
                 const sources = [
                     { name: 'Checklist', id: sheetId, sheet: 'DB' },
@@ -790,32 +701,18 @@ const App = () => {
 
     const handleManualRefresh = () => fetchData(false);
     const handleLogout = () => setAuthenticatedUser(null);
-    
-    useEffect(() => {
-        if (mode !== 'delegation') {
-            // This is a simple way to reset state, could be more granular
-        }
-    }, [mode]);
-
 
     if (!authenticatedUser) {
         return <LoginPanel onLoginSuccess={setAuthenticatedUser} />;
     }
 
-    const containerClass = mode === 'dashboard' ? 'container-dashboard' : 'container';
+    const containerClass = 'container-dashboard';
 
     return (
         <>
             <header>
                 <div className="header-left">
                     <h1>Task Delegator</h1>
-                    {isAdmin && (
-                         <div className="mode-switcher">
-                            <button onClick={() => setMode('dashboard')} className={mode === 'dashboard' ? 'active' : ''}>Task Dashboard</button>
-                            <button onClick={() => setMode('checklist')} className={mode === 'checklist' ? 'active' : ''}>Checklist</button>
-                            <button onClick={() => setMode('delegation')} className={mode === 'delegation' ? 'active' : ''}>Delegation</button>
-                        </div>
-                    )}
                 </div>
                 <div className="header-controls">
                      <div className="header-user-info">
@@ -833,79 +730,26 @@ const App = () => {
             </header>
             <div className={containerClass}>
                <main>
-                    {mode === 'dashboard' ? (
-                        <TaskDashboardSystem
-                            dashboardTasks={allDashboardTasks}
-                            misTasks={allDashboardTasks}
-                            isRefreshing={isRefreshing}
-                            dashboardTasksError={allDashboardTasksError}
-                            misTasksError={allDashboardTasksError}
-                            authenticatedUser={authenticatedUser}
-                            postToGoogleSheet={postToGoogleSheet}
-                            fetchData={fetchData}
-                            people={people}
-                            attendanceData={attendanceData}
-                            dailyAttendanceData={dailyAttendanceData}
-                            leftEmployeesData={leftEmployeesData}
-                            currentLeaveData={currentLeaveData}
-                            holidays={holidays}
-                            taskHistory={taskHistory}
-                            attendanceCheckData={attendanceCheckData}
-                            rajuTasks={rajuTasks}
-                            proofRequirements={proofRequirements}
-                        />
-                    ) : (isAdmin && mode === 'delegation') ? (
-                        <DelegationSystem 
-                            people={people}
-                            delegationTasks={delegationTasks}
-                            setDelegationTasks={setDelegationTasks}
-                            authenticatedUser={authenticatedUser}
-                            postToGoogleSheet={postToGoogleSheet}
-                            fetchData={fetchData}
-                            delegationFormUrl={DELEGATION_FORM_URL}
-                            delegationTasksError={delegationTasksError}
-                            isRefreshing={isRefreshing}
-                        />
-                    ) : (isAdmin && mode === 'checklist') ? (
-                        <ChecklistSystem
-                            isAdmin={isAdmin}
-                            people={people}
-                            checklists={checklists}
-                            setChecklists={setChecklists}
-                            masterTasks={masterTasks}
-                            setMasterTasks={setMasterTasks}
-                            tasks={tasks}
-                            setTasks={setTasks}
-                            authenticatedUser={authenticatedUser}
-                            postToGoogleSheet={postToGoogleSheet}
-                            fetchData={fetchData}
-                            checklistsError={checklistsError}
-                            masterTasksError={masterTasksError}
-                            isRefreshing={isRefreshing}
-                        />
-                    ) : (
-                        // Failsafe for non-admins if mode is not 'dashboard', or for admins with an invalid mode
-                        <TaskDashboardSystem
-                            dashboardTasks={allDashboardTasks}
-                            misTasks={allDashboardTasks}
-                            isRefreshing={isRefreshing}
-                            dashboardTasksError={allDashboardTasksError}
-                            misTasksError={allDashboardTasksError}
-                            authenticatedUser={authenticatedUser}
-                            postToGoogleSheet={postToGoogleSheet}
-                            fetchData={fetchData}
-                            people={people}
-                            attendanceData={attendanceData}
-                            dailyAttendanceData={dailyAttendanceData}
-                            leftEmployeesData={leftEmployeesData}
-                            currentLeaveData={currentLeaveData}
-                            holidays={holidays}
-                            taskHistory={taskHistory}
-                            attendanceCheckData={attendanceCheckData}
-                            rajuTasks={rajuTasks}
-                            proofRequirements={proofRequirements}
-                        />
-                    )}
+                    <TaskDashboardSystem
+                        dashboardTasks={allDashboardTasks}
+                        misTasks={allDashboardTasks}
+                        isRefreshing={isRefreshing}
+                        dashboardTasksError={allDashboardTasksError}
+                        misTasksError={allDashboardTasksError}
+                        authenticatedUser={authenticatedUser}
+                        postToGoogleSheet={postToGoogleSheet}
+                        fetchData={fetchData}
+                        people={people}
+                        attendanceData={attendanceData}
+                        dailyAttendanceData={dailyAttendanceData}
+                        leftEmployeesData={leftEmployeesData}
+                        currentLeaveData={currentLeaveData}
+                        holidays={holidays}
+                        taskHistory={taskHistory}
+                        attendanceCheckData={attendanceCheckData}
+                        rajuTasks={rajuTasks}
+                        proofRequirements={proofRequirements}
+                    />
                 </main>
             </div>
         </>
